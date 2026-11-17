@@ -1,0 +1,84 @@
+"""
+Unit Tests for Downside Distribution Consistency & Limit Tranche Sizing.
+Fails if:
+1. 90% Confidence Interval lower bound does NOT equal 95% VaR.
+2. Downside metrics contradict the single underlying distribution.
+3. Limit tranche sizing does not match the 258–268 share calculation for ₹2L.
+4. Sensitivity table does not reconcile filing-derived ROE and CAR ratios.
+"""
+import unittest
+import numpy as np
+import scipy.stats as st
+
+from hdfc_predictor.valuation_targets import ValuationTargetEngine
+
+
+class TestDownsideDistributionConsistency(unittest.TestCase):
+    def setUp(self):
+        self.ref_price = 817.80
+        self.ledger = ValuationTargetEngine.compute_unified_targets(reference_price=self.ref_price)
+        self.dist = self.ledger.downside_distribution
+
+    def test_var_95_strictly_equals_ci_90_lower(self):
+        """Tests that 95% VaR is identically equal to the 5th percentile / 90% CI lower bound."""
+        self.assertEqual(
+            self.dist.ci_90_lower,
+            self.dist.var_95_pct,
+            f"Mathematical contradiction: 90% CI lower ({self.dist.ci_90_lower}%) != 95% VaR ({self.dist.var_95_pct}%)"
+        )
+        # Horizon 120d must match the distribution exactly
+        tgt_120d = self.ledger.horizon_targets["120d"]
+        self.assertEqual(tgt_120d.confidence_interval_90[0], self.dist.ci_90_lower)
+        self.assertEqual(tgt_120d.downside_risk_pct, self.dist.var_95_pct)
+
+    def test_floor_probability_monotonicity_against_var_95(self):
+        """Tests that probability of breaching floor respects CDF monotonicity."""
+        floor_drop = self.dist.floor_required_drop_pct # e.g. -13.18%
+        var_95 = self.dist.var_95_pct                 # e.g. -7.8%
+
+        # Because -13.18% is a deeper drop than -7.8%, prob must be strictly less than 5% (0.05)
+        if floor_drop < var_95:
+            self.assertLess(
+                self.dist.prob_breach_floor_pct,
+                5.0,
+                f"Floor drop ({floor_drop}%) is worse than 95% VaR ({var_95}%), but prob ({self.dist.prob_breach_floor_pct}%) >= 5%!"
+            )
+        else:
+            self.assertGreater(
+                self.dist.prob_breach_floor_pct,
+                5.0,
+                f"Floor drop ({floor_drop}%) is milder than 95% VaR ({var_95}%), but prob ({self.dist.prob_breach_floor_pct}%) <= 5%!"
+            )
+
+    def test_distribution_cdf_mathematical_precision(self):
+        """Tests that prob_breach_floor is exactly CDF(z_floor) from the same distribution."""
+        z = (self.dist.floor_required_drop_pct - self.dist.expected_return_pct) / self.dist.std_dev_pct
+        expected_prob = round(float(st.norm.cdf(z)) * 100.0, 2)
+        self.assertAlmostEqual(self.dist.prob_breach_floor_pct, expected_prob, places=1)
+
+    def test_limit_tranche_sizing_accuracy(self):
+        """Tests that the first tranche is sized at limit range (258 to 268 shares for ₹2L)."""
+        tranche = self.ledger.limit_tranche
+        self.assertEqual(tranche.budget_amount, 200000.0)
+        self.assertEqual(tranche.shares_at_zone_high, 258)
+        self.assertEqual(tranche.shares_at_zone_low, 268)
+        self.assertEqual(tranche.shares_range_label, "258–268 Shares")
+        self.assertNotIn("We approve buying", tranche.non_conflicting_action_text)
+        self.assertIn("limit order in the pullback zone", tranche.non_conflicting_action_text)
+
+    def test_sensitivity_table_and_filing_reconciliation(self):
+        """Tests sensitivity table coverage and CAR 19.3% vs 18.9% reconciliation."""
+        table = self.ledger.sensitivity_table
+        self.assertEqual(table.filing_derived_roe_pct, 14.80)
+        self.assertIn("Form 6-K", table.filing_roe_source)
+        self.assertEqual(table.car_total_crar_pct, 19.3)
+        self.assertEqual(table.car_tier1_pct, 18.9)
+        self.assertIn("Total CRAR 19.3%", table.car_source)
+        self.assertIn("Tier-1 18.9%", table.car_source)
+        self.assertEqual(len(table.grid), 3) # 3 ROE rows
+        for row in table.grid:
+            self.assertEqual(len(row), 3) # 3 Ke cols
+
+
+if __name__ == "__main__":
+    unittest.main()

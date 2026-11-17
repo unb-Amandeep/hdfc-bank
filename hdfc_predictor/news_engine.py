@@ -74,7 +74,7 @@ class NewsEngine:
             headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
         )
         try:
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=2.0) as response:
                 xml_data = response.read()
                 root = ET.fromstring(xml_data)
                 
@@ -117,7 +117,7 @@ class NewsEngine:
         )
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "HDFC-Predictor/1.0"})
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=2.0) as response:
                 data = json.loads(response.read().decode())
                 for item in data[:10]:
                     articles.append({
@@ -143,7 +143,7 @@ class NewsEngine:
         )
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "HDFC-Predictor/1.0"})
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=2.0) as response:
                 data = json.loads(response.read().decode())
                 feed = data.get("feed", [])
                 if feed:

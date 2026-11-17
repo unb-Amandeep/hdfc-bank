@@ -74,6 +74,12 @@ class Backtester:
         start_close = float(test_df["Close"].iloc[0])
         benchmark_shares = benchmark_capital / start_close
 
+        # Monthly SIP simulation tracker (equal monthly installments)
+        total_months = max(1, int(len(test_df) / 21))
+        monthly_sip_cash = 100000.0 / total_months
+        sip_cash_remaining = 100000.0
+        sip_shares = 0.0
+
         prev_capital = capital
         consecutive_wins = 0
         consecutive_losses = 0
@@ -91,6 +97,13 @@ class Backtester:
             curr_close = float(row["Close"])
             next_close = float(next_row["Close"])
             actual_next_return = (next_close - curr_close) / curr_close
+
+            # SIP monthly deployment (day 0 and every 21 trading days)
+            if i % 21 == 0 and sip_cash_remaining > 0:
+                deploy = min(sip_cash_remaining, monthly_sip_cash)
+                sip_shares += deploy / curr_close
+                sip_cash_remaining -= deploy
+            curr_sip = sip_cash_remaining + (sip_shares * curr_close)
 
             # Feature dictionary
             # Synthetic proxy sentiment calibrated with momentum and volatility shock for historical test
@@ -145,6 +158,7 @@ class Backtester:
                 "date": curr_date,
                 "strategy_equity": round(capital, 2),
                 "benchmark_equity": round(curr_benchmark, 2),
+                "sip_equity": round(curr_sip, 2),
                 "action": action,
                 "close": curr_close
             })

@@ -159,10 +159,23 @@ class EventIntelligenceEngine:
             if event.materiality == "HIGH_MATERIAL":
                 material_events.append(event)
 
+        # Fallback to moderate/classified if high_material is empty
+        display_events = material_events if material_events else [e for e in classified if e.materiality != "ROUTINE_NOISE"]
+        if not display_events and classified:
+            display_events = classified
+
+        # 9. "Why did it move?" line extraction
+        if display_events:
+            top_e = display_events[0]
+            why_moved = f"{top_e.category_label}: {top_e.title}. {top_e.explanation}"
+        else:
+            why_moved = "No explanation found in statutory or regulatory filings."
+
         return {
             "total_articles_scanned": len(raw_articles),
             "unique_stories": len(classified),
-            "material_events_count": len(material_events),
-            "material_events": [e.__dict__ for e in material_events[:6]],
+            "material_events_count": len(display_events),
+            "why_did_it_move": why_moved,
+            "material_events": [e.__dict__ for e in display_events[:6]],
             "all_events": [e.__dict__ for e in classified[:12]]
         }
