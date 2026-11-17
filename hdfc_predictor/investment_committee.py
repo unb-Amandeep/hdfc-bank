@@ -90,7 +90,7 @@ class InvestmentCommittee:
                 "MSCI weight increases have been largely priced into the recent 17% run-up."
             ],
             invalidation_conditions=[
-                "Deposit growth falling below 12% YoY, which would reignite balance-sheet liquidity stress.",
+                "Deposit growth falling below 11% YoY, which would reignite balance-sheet liquidity stress.",
                 "Persistent RBI LAF liquidity deficit exceeding ₹1.5 lakh crore."
             ]
         )

@@ -80,9 +80,12 @@ class TestPhase5FairValueAndRegime(unittest.TestCase):
             gift_nifty_change_pct=-0.35
         )
         self.assertTrue(directive.has_tier_conflict)
+        self.assertEqual(directive.verdict_action, "WAIT")  # Price (814) > buy zone max (775) -> MUST BE WAIT!
         self.assertEqual(directive.execution_order_type, "LIMIT_ORDER_PULLBACK")
         self.assertEqual(directive.overnight_gift_nifty_bias, "BEARISH")
         self.assertEqual(directive.thesis_break_status, "INTACT")
+        self.assertIn("2026-11-24", directive.order_expiry_date)
+        self.assertIn("cancel the pending limit order", directive.order_recheck_rule)
         # Pullback limit zone must be strictly below current market price
         self.assertLess(directive.limit_entry_zone[1], 814.0)
         self.assertIn("TIER CONFLICT SURFACED", directive.tier_conflict_explanation)

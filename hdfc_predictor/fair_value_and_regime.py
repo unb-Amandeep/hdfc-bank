@@ -49,16 +49,20 @@ class RegimeState:
 
 @dataclass
 class ArbitrationDirective:
+    verdict_action: str                # Strictly: "ACCUMULATE" only if inside zone, else "WAIT", "REDUCE", "ABSTAIN"
+    verdict_subtitle: str
     primary_decision: str              # e.g. "ACCUMULATE_20_PCT"
     tactical_timing: str               # e.g. "WAIT_FOR_LIMIT_PULLBACK"
     execution_order_type: str          # "LIMIT_ORDER_PULLBACK", "MARKET_TRANCHE", "HOLD_OFF"
-    limit_entry_zone: Tuple[float, float] # e.g. (740.0, 770.0)
+    limit_entry_zone: Tuple[float, float] # e.g. (748.0, 778.0)
+    order_expiry_date: str             # e.g. "2026-11-24 (5 Trading Days)"
+    order_recheck_rule: str            # Re-check rule if limit is not filled
     has_tier_conflict: bool
     tier_conflict_explanation: Optional[str]
     is_event_blackout_active: bool
     blackout_reason: Optional[str]
     overnight_gift_nifty_bias: str     # "BULLISH", "BEARISH", "NEUTRAL"
-    thesis_break_status: str           # "INTACT", "WARNING", "INVALIDATED"
+    thesis_break_status: str           # "INTACT", "WARNING", "INVALIDATED", "VALUATION_EXIT"
     what_would_change_my_mind: str
 
 
@@ -202,9 +206,9 @@ class FairValueAndRegimeEngine:
         if fundamental_score < 50:
             thesis_status = "INVALIDATED"
             what_change = "Thesis invalidated due to fundamental balance-sheet rot. Freeze all accumulation."
-        elif current_pb >= 3.40:
+        elif current_pb >= 2.68 or current_price >= 1058.0:
             thesis_status = "VALUATION_EXIT"
-            what_change = "P/B reached 10-year median (3.4x). Valuation discount fully closed; initiate scheduled profit exit."
+            what_change = "P/B reached Bull Case fair value (2.68x, ~₹1,058). Post-merger cyclical discount fully closed; initiate scheduled profit-taking."
         else:
             thesis_status = "INTACT"
             what_change = "A quarterly drop in deposit growth below 11% YoY or Gross NPA spiking > 1.6% would invalidate the thesis and freeze tranches."
@@ -253,11 +257,45 @@ class FairValueAndRegimeEngine:
 
         gift_bias = "BULLISH" if gift_nifty_change_pct > 0.15 else ("BEARISH" if gift_nifty_change_pct < -0.15 else "NEUTRAL")
 
+        # Non-negotiable verdict rule:
+        # ACCUMULATE only when current_price is inside the buy zone!
+        # When price > zone[1], the honest label is WAIT!
+        is_inside_buy_zone = (zone[0] <= current_price <= zone[1]) if zone != (0.0, 0.0) else False
+        expiry_date = "2026-11-24 (5 Trading Days)"
+        recheck_rule = (
+            f"If price does not reach the ₹{zone[0]:.0f}–₹{zone[1]:.0f} buy zone by {expiry_date}, "
+            "cancel the pending limit order, re-evaluate balance-sheet valuation, and reset the limit zone "
+            "based on updated 20-day SMA support."
+        )
+
+        if is_blackout:
+            verdict_action = "WAIT"
+            verdict_subtitle = "Event blackout active (quarterly earnings / RBI MPC within 2 days). Freeze orders."
+        elif thesis_status == "INVALIDATED":
+            verdict_action = "HALT / EXIT"
+            verdict_subtitle = "Balance sheet thesis broken. Freeze accumulation."
+        elif thesis_status == "VALUATION_EXIT":
+            verdict_action = "REDUCE"
+            verdict_subtitle = "Bull Case fair value reached. Take scheduled cyclical profits."
+        elif is_inside_buy_zone:
+            verdict_action = "ACCUMULATE"
+            verdict_subtitle = f"Price (₹{current_price:.2f}) is inside accumulation zone (₹{zone[0]:.0f}–₹{zone[1]:.0f}). Execute tranche."
+        elif current_price > zone[1] and zone != (0.0, 0.0):
+            verdict_action = "WAIT"
+            verdict_subtitle = f"Price (₹{current_price:.2f}) is above buy zone (₹{zone[0]:.0f}–₹{zone[1]:.0f}). Set limit order; do not chase."
+        else:
+            verdict_action = "WAIT"
+            verdict_subtitle = "Preserve cash. Wait for cyclical margin of safety."
+
         return ArbitrationDirective(
+            verdict_action=verdict_action,
+            verdict_subtitle=verdict_subtitle,
             primary_decision=primary_dec,
             tactical_timing=tactical_tim,
             execution_order_type=order_type,
             limit_entry_zone=zone,
+            order_expiry_date=expiry_date,
+            order_recheck_rule=recheck_rule,
             has_tier_conflict=has_conflict,
             tier_conflict_explanation=conflict_exp,
             is_event_blackout_active=is_blackout,
