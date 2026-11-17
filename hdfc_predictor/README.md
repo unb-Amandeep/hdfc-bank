@@ -74,6 +74,13 @@ From the project root:
 - **Data Quality Gates**: Freshness validation, schema integrity, and raw bar indicator recomputation (cross-checking RSI and 20-SMA distance).
 - **Abstention Engine**: Commands unequivocal `ABSTAIN` on data drift, source conflict (>2.5%), or out-of-distribution regime; strictly blocks capital allocation (0% deployed).
 
+### Phase 2: Historical Replay Simulator & Investable Baselines
+- **Next-Session VWAP Execution**: Replays history using strictly point-in-time signals with next-session execution rule $(O+H+L+C)/4$ plus institutional friction (0.10%).
+- **Identical-Capital Baselines**: Benchmarks strategy against Lump-Sum Buy & Hold, Monthly SIP, Buy on Fixed Drawdown (-15%/-25%), and Simple Valuation-Percentile Accumulation.
+- **Counterfactual Policies**: Measures trade-offs between "Buy Now Full", "Monthly SIP", "Staged Tranches", and "Hold Cash".
+- **Advanced Quant Metrics**: Evaluates MAE (Maximum Adverse Excursion), MFE (Maximum Favorable Excursion), Sharpe, Calmar, Capital Efficiency, and net transaction friction. All outputs marked as hypothetical simulations.
+
+
 
 ```
 hdfc_predictor/
