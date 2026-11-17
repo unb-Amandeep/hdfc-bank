@@ -4,9 +4,10 @@ Calculates staged tranche deployments, cash reserves, fair value ranges,
 and downside scenario buffers across custom investment budgets.
 """
 from dataclasses import dataclass
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from hdfc_predictor.config import settings
+from hdfc_predictor.deterministic_risk import DeterministicRiskEngine, DeterministicTranchePlan
 
 
 @dataclass
@@ -23,6 +24,7 @@ class CapitalPlan:
     margin_of_safety_pct: float          # e.g. +13.1% to Base Fair Value
     tranche_ladder_table: List[Dict[str, Any]]
     allocation_rationale: str
+    deterministic_tranche: Optional[DeterministicTranchePlan] = None
 
 
 class CapitalAllocator:
@@ -104,6 +106,15 @@ class CapitalAllocator:
             f"This prevents exhaustion of capital on initial pullbacks."
         )
 
+        # Compute deterministic risk tranche
+        risk_engine = DeterministicRiskEngine()
+        deterministic_tranche = risk_engine.calculate_tranche(
+            bottom_opportunity_score=bottom_score,
+            current_price=current_price,
+            portfolio_wealth=total_budget,
+            abstention=abstention
+        )
+
         return CapitalPlan(
             total_investment_budget=total_budget,
             bottom_opportunity_score=bottom_score,
@@ -116,5 +127,6 @@ class CapitalAllocator:
             bear_case_floor=bear_floor,
             margin_of_safety_pct=margin_of_safety,
             tranche_ladder_table=ladder,
-            allocation_rationale=rationale
+            allocation_rationale=rationale,
+            deterministic_tranche=deterministic_tranche
         )

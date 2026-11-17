@@ -98,6 +98,12 @@ From the project root:
 - **Quantitative 3-State Regime**: Deterministic classification into *Active Correction*, *Base Recovery*, or *Overheated/Breakdown* using indicator physics and balance-sheet integrity (no LLM hallucination).
 - **Two-Tier Arbitration Layer**: Primary tier decides WHAT and HOW MUCH; Tactical tier decides WHEN and ORDER TYPE. Surfaces tier conflicts explicitly (e.g. Primary Accumulate vs Tactical Sell routes to a limit order pullback zone). Enforces event blackouts (earnings, RBI MPC) and thesis-invalidation exits.
 
+### Phase 6 Upgrades: Deterministic Risk & Capital Engine
+- **Strictly Rule-Based Sizing (Zero LLM Influence)**: Sizing is calculated strictly from deterministic mathematical formulas driven by cyclical score, ATR/realized volatility, portfolio drawdown, concentration cap, and time-in-cash caps.
+- **Portfolio Concentration Hard-Cap**: Enforces a strict maximum of 15.0% of total wealth in HDFC Bank equity. Sizing is instantly zeroed when concentration limit is reached.
+- **Volatility Scaling & Drawdown Dampener**: Sizing automatically scales down as realized volatility exceeds target volatility (20%) and halts capital deployment when portfolio-level drawdown reaches 15%.
+- **Actionable Execution Plan**: Outputs exact shares, rupee allocation, entry limit price with 5-day validity window, book-value-driven fundamental invalidation price (1.50x BVPS = ₹592.30), and swing-low ratchet rules (no trailing on ATR alone).
+
 
 
 
