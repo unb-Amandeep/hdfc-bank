@@ -80,6 +80,13 @@ From the project root:
 - **Counterfactual Policies**: Measures trade-offs between "Buy Now Full", "Monthly SIP", "Staged Tranches", and "Hold Cash".
 - **Advanced Quant Metrics**: Evaluates MAE (Maximum Adverse Excursion), MFE (Maximum Favorable Excursion), Sharpe, Calmar, Capital Efficiency, and net transaction friction. All outputs marked as hypothetical simulations.
 
+### Phase 3: Score Validation on Pooled Banking Universe
+- **Pooled Universe Calibration**: Evaluates model across major banking peers (`ICICIBANK.NS`, `SBIN.NS`, `KOTAKBANK.NS`, `AXISBANK.NS`) to prevent single-stock overfitting.
+- **Decile Monotonicity Tests**: Verifies whether higher scores strictly yield higher forward returns (5d, 20d, 60d, 120d, 252d); flags non-monotonic score inversions.
+- **Purging & Embargo**: Purges overlapping forward labels between train/test splits and computes effective degrees of freedom ($N_{\text{eff}} = N/\text{Horizon}$) rather than inflated raw row counts.
+- **Weight Sensitivity (+/-20%)**: Audits score pillar stability against weight perturbations via Spearman rank correlation ($\rho \ge 0.92$).
+
+
 
 
 ```
