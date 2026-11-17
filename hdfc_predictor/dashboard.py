@@ -1,7 +1,14 @@
 """
 Interactive Web Dashboard for HDFC Bank Cyclical Accumulation & Decision Intelligence.
-Built for absolute trust, plain language, and mathematical auditability.
-Features 4 fixed tabs (Today, Why, Proof, Data Health), Watchlist Screen, and Phone View.
+Unified into a single, cohesive single-page dashboard:
+1. Verdict & Capital Allocation Plan
+2. Price Position & Institutional Jump Catalysts
+3. Five Accumulation Gates
+4. Latest Earnings Call & Management Guidance (Concall Intelligence)
+5. Fair Value Sensitivity Matrix & Balance Sheet Reconciliation
+6. Audited Historical Proof & Backtest
+7. Data Health & Cryptographic Audit Ledger
+Plus Watchlist and Phone View drawers/modals.
 """
 import http.server
 import json
@@ -34,11 +41,12 @@ from hdfc_predictor.deterministic_risk import DeterministicRiskEngine
 from hdfc_predictor.valuation_targets import ValuationTargetEngine
 from hdfc_predictor.track_record import TrackRecordEngine
 from hdfc_predictor.trading_calendar import TradingCalendar
+from hdfc_predictor.earnings_transcript import EarningsTranscriptEngine
 
 PORT = 8501
 
 HTML_TEMPLATE = """<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -49,23 +57,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <style>
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #0f172a; }
         .mono { font-family: 'JetBrains Mono', monospace; }
-        .tab-btn.active { color: #0f172a; border-bottom: 2px solid #0f172a; font-weight: 700; }
-        .tab-btn:not(.active) { color: #64748b; border-bottom: 2px solid transparent; }
         .tech-only { display: none; }
         body.show-tech .tech-only { display: inline-block; }
         body.show-tech .tech-block { display: block; }
         body:not(.show-tech) .tech-block { display: none; }
         
-        /* Custom switch toggle */
-        .toggle-checkbox:checked { right: 0; border-color: #10b981; background-color: #10b981; }
-        .toggle-checkbox:checked + .toggle-label { background-color: #10b981; }
+        .nav-link {
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        .nav-link:hover {
+            color: #0f172a;
+        }
     </style>
 </head>
-<body class="min-h-screen antialiased">
+<body class="min-h-screen antialiased text-slate-800">
 
     <!-- Top Sticky Header -->
-    <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
-        <div class="max-w-[1180px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
+    <header class="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50">
+        <div class="max-w-[1200px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
             <!-- Left Brand -->
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center font-bold text-white text-sm">
@@ -74,6 +84,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <div>
                     <div class="flex items-center gap-2">
                         <span class="text-sm font-bold text-slate-900">Accumulation Engine</span>
+                        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold">Single-Page Suite</span>
                     </div>
                     <p class="text-xs text-slate-500">HDFC Bank · NSE: HDFCBANK · Paper trading</p>
                 </div>
@@ -103,24 +114,30 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- 4 Fixed Tabs + Views Navigation Bar -->
-        <div class="max-w-[1180px] mx-auto px-6 flex items-center justify-between border-t border-slate-100 text-xs font-semibold">
-            <nav class="flex gap-8">
-                <button onclick="switchTab('today')" id="tabNavToday" class="tab-btn active py-3">Today</button>
-                <button onclick="switchTab('why')" id="tabNavWhy" class="tab-btn py-3">Why</button>
-                <button onclick="switchTab('proof')" id="tabNavProof" class="tab-btn py-3">Proof</button>
-                <button onclick="switchTab('health')" id="tabNavHealth" class="tab-btn py-3 flex items-center gap-1.5">
-                    Data health
-                    <span class="w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-bold">2</span>
-                </button>
+        <!-- Sticky Anchor Sub-Navigation Bar -->
+        <div class="max-w-[1200px] mx-auto px-6 flex items-center justify-between border-t border-slate-100 text-xs font-semibold overflow-x-auto">
+            <nav class="flex gap-6 py-2.5">
+                <a href="#sectionOverview" class="nav-link text-slate-900 font-bold hover:text-emerald-600 transition">Plan & Verdict</a>
+                <a href="#sectionPrice" class="nav-link text-slate-500 hover:text-slate-900 transition">Price & Catalysts</a>
+                <a href="#sectionChecks" class="nav-link text-slate-500 hover:text-slate-900 transition">5 Gates</a>
+                <a href="#sectionEarnings" class="nav-link text-slate-500 hover:text-slate-900 transition flex items-center gap-1.5">
+                    Concall Guidance
+                    <span class="px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold">New</span>
+                </a>
+                <a href="#sectionValuation" class="nav-link text-slate-500 hover:text-slate-900 transition">Valuation Matrix</a>
+                <a href="#sectionProof" class="nav-link text-slate-500 hover:text-slate-900 transition">Audited Proof</a>
+                <a href="#sectionHealth" class="nav-link text-slate-500 hover:text-slate-900 transition flex items-center gap-1.5">
+                    Data Health
+                    <span class="w-4 h-4 rounded-full bg-slate-200 text-slate-700 text-[10px] flex items-center justify-center font-bold">2</span>
+                </a>
             </nav>
 
-            <div class="flex items-center gap-3 py-2">
-                <button onclick="switchTab('watchlist')" id="tabNavWatchlist" class="text-xs text-slate-600 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 flex items-center gap-1">
+            <div class="flex items-center gap-2 py-2 pl-4 shrink-0">
+                <button onclick="toggleWatchlistModal()" class="text-xs text-slate-600 hover:text-slate-900 px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 flex items-center gap-1 font-semibold transition">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
                     Watchlist
                 </button>
-                <button onclick="togglePhoneViewModal()" class="text-xs text-slate-600 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 flex items-center gap-1">
+                <button onclick="togglePhoneViewModal()" class="text-xs text-slate-600 hover:text-slate-900 px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 flex items-center gap-1 font-semibold transition">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
                     Phone View
                 </button>
@@ -128,18 +145,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
     </header>
 
-    <main class="max-w-[1180px] mx-auto px-6 py-8">
+    <!-- Main Single-Page Content -->
+    <main class="max-w-[1200px] mx-auto px-6 py-8 space-y-10">
 
         <!-- ========================================================================= -->
-        <!-- TAB 1: TODAY (PRIMARY DASHBOARD & ACTION LOOP)                            -->
+        <!-- 1. OVERVIEW: VERDICT, TRADING PLAN & SIDEBAR                               -->
         <!-- ========================================================================= -->
-        <div id="tabContentToday" class="space-y-6">
+        <section id="sectionOverview" class="scroll-mt-28">
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                 
-                <!-- Left 2 Cols: Main Verdict, Price Slider, Why Jumped, 5 Checks -->
+                <!-- Left 2 Cols: Main Verdict & Action Tiles -->
                 <div class="lg:col-span-2 space-y-6">
-                    
-                    <!-- Verdict Hero Card -->
                     <div class="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-7 shadow-sm space-y-6">
                         <!-- Top Metadata Pills -->
                         <div class="flex flex-wrap items-center gap-2.5 text-xs">
@@ -185,216 +201,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </div>
                     </div>
-
-                    <!-- Where the price is now (Horizontal Slider Graphic) -->
-                    <div class="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-7 shadow-sm space-y-5">
-                        <div class="space-y-1">
-                            <h3 class="text-sm font-bold text-slate-900">Where the price is now</h3>
-                            <p class="text-xs text-slate-500">The green band is where the plan says to buy. Today's price sits above it.</p>
-                        </div>
-
-                        <!-- Slider Graphic Container -->
-                        <div class="py-6 px-2">
-                            <div class="relative w-full h-2.5 bg-slate-100 rounded-full flex items-center">
-                                <!-- Buy Zone (Green Band: 15% to 35%) -->
-                                <div class="absolute h-4 bg-emerald-100 border-2 border-emerald-500 rounded-md flex items-center justify-center text-[10px] font-bold text-emerald-800" style="left: 18%; width: 22%;">
-                                    <span class="hidden sm:inline">Buy zone</span>
-                                </div>
-
-                                <!-- Current Price Pin: Now ₹817.80 (at approx 50%) -->
-                                <div class="absolute flex flex-col items-center -top-8 z-10" style="left: 48%;">
-                                    <span class="bg-slate-900 text-white text-[11px] font-bold px-2 py-0.5 rounded shadow mono">
-                                        Now ₹817.80
-                                    </span>
-                                    <div class="w-0.5 h-6 bg-slate-900"></div>
-                                </div>
-
-                                <!-- Fair Value Marker: ₹920 (at approx 75%) -->
-                                <div class="absolute w-0.5 h-5 bg-indigo-600 top-1/2 -translate-y-1/2" style="left: 74%;"></div>
-
-                                <!-- Bull Case Marker: ₹1,058 (at approx 95%) -->
-                                <div class="absolute w-0.5 h-5 bg-blue-600 top-1/2 -translate-y-1/2" style="left: 95%;"></div>
-
-                                <!-- Floor Marker: ₹710 (at approx 8%) -->
-                                <div class="absolute w-0.5 h-5 bg-rose-500 top-1/2 -translate-y-1/2" style="left: 8%;"></div>
-                            </div>
-
-                            <!-- Slider Labels -->
-                            <div class="relative w-full h-8 mt-4 text-xs">
-                                <div class="absolute text-center -translate-x-1/2" style="left: 8%;">
-                                    <span class="text-[10px] text-slate-400 block">Floor</span>
-                                    <span class="font-bold text-slate-900 mono">₹710</span>
-                                </div>
-                                <div class="absolute text-center -translate-x-1/2" style="left: 29%;">
-                                    <span class="text-[10px] text-emerald-700 font-bold block">Buy zone</span>
-                                    <span class="font-bold text-emerald-800 mono">₹745–775</span>
-                                </div>
-                                <div class="absolute text-center -translate-x-1/2" style="left: 74%;">
-                                    <span class="text-[10px] text-indigo-600 font-semibold block">Fair value</span>
-                                    <span class="font-bold text-slate-900 mono">₹920</span>
-                                </div>
-                                <div class="absolute text-center -translate-x-1/2" style="left: 95%;">
-                                    <span class="text-[10px] text-slate-400 block">Bull case</span>
-                                    <span class="font-bold text-slate-900 mono">₹1,058</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <p class="text-xs text-slate-600">
-                            To reach the buy zone the price has to fall about <strong>5% to 9%</strong> from here.
-                        </p>
-
-                        <!-- 3 Outcome Cards Below Slider -->
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                            <div class="border border-slate-200 p-4 rounded-xl space-y-1">
-                                <p class="text-xl font-bold text-emerald-600 mono">+12.5%</p>
-                                <p class="text-xs text-slate-600 leading-snug">Possible gain if it reaches fair value (₹920)</p>
-                            </div>
-                            <div class="border border-slate-200 p-4 rounded-xl space-y-1">
-                                <p class="text-xl font-bold text-rose-500 mono">−13.2%</p>
-                                <p class="text-xs text-slate-600 leading-snug">Fall if it drops to the floor (₹710)</p>
-                            </div>
-                            <div class="border border-slate-200 p-4 rounded-xl space-y-1">
-                                <p class="text-xl font-bold text-slate-900 mono">6 in 10</p>
-                                <p class="text-xs text-slate-600 leading-snug">Chance it beats the Bank Nifty index over 6 months</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Why did it jump? Card -->
-                    <div class="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-7 shadow-sm space-y-3">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                <h3 class="text-sm font-bold text-slate-900">Why did it jump?</h3>
-                                <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                                    MSCI Rebalancing & Inflows
-                                </span>
-                            </div>
-                            <button onclick="switchTab('why')" class="text-xs text-slate-600 hover:text-slate-900 font-semibold flex items-center gap-1">
-                                View details →
-                            </button>
-                        </div>
-                        <p class="text-xs text-slate-600 leading-relaxed">
-                            Scheduled MSCI index weight doubling triggered an estimated <strong>$3.5B+ in non-discretionary passive foreign buying</strong>, while Q2 deposit mobilization (15.1% YoY) reassured markets that the post-merger Credit-to-Deposit ratio is declining safely below 98%. However, a 16.8% sprint in 10 trading days pushes short-term momentum into extreme overbought territory (Wilder RSI 88.7). Until the surge pauses and consolidates, treat the rally with caution.
-                        </p>
-                    </div>
-
-                    <!-- Five checks before any money moves (Accordion Rows) -->
-                    <div class="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-7 shadow-sm space-y-4">
-                        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                            <div>
-                                <h3 class="text-sm font-bold text-slate-900">Five checks before any money moves</h3>
-                                <p class="text-xs text-slate-500">Select a row for the reasoning.</p>
-                            </div>
-                            <span class="text-xs font-semibold px-2.5 py-1 rounded bg-slate-100 text-slate-700">
-                                4 passed · 1 waiting
-                            </span>
-                        </div>
-
-                        <div class="space-y-2">
-                            <!-- Check 1 -->
-                            <details class="group border border-slate-200 rounded-xl p-3.5 transition cursor-pointer">
-                                <summary class="flex items-center justify-between text-xs list-none">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">✓</div>
-                                        <div>
-                                            <span class="font-bold text-slate-900 text-sm block">Is it cheap?</span>
-                                            <span class="text-slate-500 text-xs">Yes. Cheaper than usual.</span>
-                                        </div>
-                                    </div>
-                                    <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px]">PASS</span>
-                                </summary>
-                                <div class="pt-3 text-xs text-slate-600 border-t border-slate-100 mt-2.5 space-y-1">
-                                    <p>• Trades at 2.07x P/B (16th percentile in the post-merger era).</p>
-                                    <p>• Rare 33% discount to ICICI Bank (2.07x vs 3.10x).</p>
-                                    <p>• Offers a +12.5% safety margin against Base Fair Value (₹920).</p>
-                                </div>
-                            </details>
-
-                            <!-- Check 2 -->
-                            <details class="group border border-slate-200 rounded-xl p-3.5 transition cursor-pointer">
-                                <summary class="flex items-center justify-between text-xs list-none">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">✓</div>
-                                        <div>
-                                            <span class="font-bold text-slate-900 text-sm block">Is the bank healthy?</span>
-                                            <span class="text-slate-500 text-xs">Yes. Passed every balance-sheet test.</span>
-                                        </div>
-                                    </div>
-                                    <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px]">PASS</span>
-                                </summary>
-                                <div class="pt-3 text-xs text-slate-600 border-t border-slate-100 mt-2.5 space-y-1">
-                                    <p>• Gross NPA: 1.11% · Net NPA: 0.33% · PCR: 70.3%.</p>
-                                    <p>• Total Capital Adequacy Ratio (CRAR) is 19.3% and Tier-1 is 18.9% (well above 11.5% minimum).</p>
-                                    <p>• Deposit growth is 15.1% YoY (above the 11.0% thesis-invalidation floor).</p>
-                                </div>
-                            </details>
-
-                            <!-- Check 3 -->
-                            <details class="group border border-slate-200 rounded-xl p-3.5 transition cursor-pointer">
-                                <summary class="flex items-center justify-between text-xs list-none">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">✓</div>
-                                        <div>
-                                            <span class="font-bold text-slate-900 text-sm block">Has it stopped falling?</span>
-                                            <span class="text-slate-500 text-xs">Yes. It looks like it has formed a base.</span>
-                                        </div>
-                                    </div>
-                                    <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px]">PASS</span>
-                                </summary>
-                                <div class="pt-3 text-xs text-slate-600 border-t border-slate-100 mt-2.5 space-y-1">
-                                    <p>• Base recovery probability: 65%.</p>
-                                    <p>• Strong buying confirmed multi-year floor at ₹694.</p>
-                                    <p>• 20-day moving average is curving up; volume ratio healthy at 1.1x.</p>
-                                </div>
-                            </details>
-
-                            <!-- Check 4 (Waiting on Pullback) -->
-                            <details class="group border border-amber-300 bg-amber-50/20 rounded-xl p-3.5 transition cursor-pointer" open>
-                                <summary class="flex items-center justify-between text-xs list-none">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-5 h-5 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">!</div>
-                                        <div>
-                                            <span class="font-bold text-slate-900 text-sm block">Is now a good time?</span>
-                                            <span class="text-amber-800 font-medium text-xs">Not yet. It rose too fast.</span>
-                                        </div>
-                                    </div>
-                                    <span class="px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[11px]">WAIT</span>
-                                </summary>
-                                <div class="pt-3 text-xs text-slate-700 border-t border-amber-200 mt-2.5 space-y-1.5 leading-relaxed">
-                                    <p class="font-semibold text-slate-900">
-                                        The price rose 16.8% in 10 trading days. After sprints like this, prices often pause or dip, so the plan waits.
-                                    </p>
-                                    <p class="text-slate-600">
-                                        14-day Wilder RSI reached 88.7. Tactical accumulation requires patient limit orders at ₹745–₹775 instead of chasing market tops.
-                                    </p>
-                                </div>
-                            </details>
-
-                            <!-- Check 5 -->
-                            <details class="group border border-slate-200 rounded-xl p-3.5 transition cursor-pointer">
-                                <summary class="flex items-center justify-between text-xs list-none">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">✓</div>
-                                        <div>
-                                            <span class="font-bold text-slate-900 text-sm block">Is it within your risk limits?</span>
-                                            <span class="text-slate-500 text-xs">Yes. 80% stays in cash.</span>
-                                        </div>
-                                    </div>
-                                    <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px]">PASS</span>
-                                </summary>
-                                <div class="pt-3 text-xs text-slate-600 border-t border-slate-100 mt-2.5 space-y-1">
-                                    <p>• Tranche #1 uses ₹2.00 Lakhs (20% of your ₹10L budget).</p>
-                                    <p>• Total wealth concentration stays safely under the 15% single-stock ceiling.</p>
-                                </div>
-                            </details>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Right 1 Col: Sidebar (Rules, Alerts, Your Plan) -->
                 <div class="space-y-6">
-
                     <!-- Sidebar Card 1: What would change the plan -->
                     <div class="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-sm space-y-4">
                         <h3 class="text-sm font-bold text-slate-900">What would change the plan</h3>
@@ -464,18 +274,282 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </div>
                     </div>
+                </div>
 
+            </div>
+        </section>
+
+        <!-- ========================================================================= -->
+        <!-- 2. PRICE POSITION & INSTITUTIONAL CATALYSTS                                -->
+        <!-- ========================================================================= -->
+        <section id="sectionPrice" class="scroll-mt-28 space-y-6">
+            <!-- Where the price is now (Horizontal Slider Graphic) -->
+            <div class="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-7 shadow-sm space-y-5">
+                <div class="space-y-1">
+                    <h3 class="text-sm font-bold text-slate-900">Where the price is now</h3>
+                    <p class="text-xs text-slate-500">The green band is where the plan says to buy. Today's price sits above it.</p>
+                </div>
+
+                <!-- Slider Graphic Container -->
+                <div class="py-6 px-2">
+                    <div class="relative w-full h-2.5 bg-slate-100 rounded-full flex items-center">
+                        <!-- Buy Zone (Green Band: 18% to 40%) -->
+                        <div class="absolute h-4 bg-emerald-100 border-2 border-emerald-500 rounded-md flex items-center justify-center text-[10px] font-bold text-emerald-800" style="left: 18%; width: 22%;">
+                            <span class="hidden sm:inline">Buy zone</span>
+                        </div>
+
+                        <!-- Current Price Pin: Now ₹817.80 -->
+                        <div class="absolute flex flex-col items-center -top-8 z-10" style="left: 48%;">
+                            <span class="bg-slate-900 text-white text-[11px] font-bold px-2 py-0.5 rounded shadow mono">
+                                Now ₹817.80
+                            </span>
+                            <div class="w-0.5 h-6 bg-slate-900"></div>
+                        </div>
+
+                        <!-- Fair Value Marker: ₹920 -->
+                        <div class="absolute w-0.5 h-5 bg-indigo-600 top-1/2 -translate-y-1/2" style="left: 74%;"></div>
+
+                        <!-- Bull Case Marker: ₹1,058 -->
+                        <div class="absolute w-0.5 h-5 bg-blue-600 top-1/2 -translate-y-1/2" style="left: 95%;"></div>
+
+                        <!-- Floor Marker: ₹710 -->
+                        <div class="absolute w-0.5 h-5 bg-rose-500 top-1/2 -translate-y-1/2" style="left: 8%;"></div>
+                    </div>
+
+                    <!-- Slider Labels -->
+                    <div class="relative w-full h-8 mt-4 text-xs">
+                        <div class="absolute text-center -translate-x-1/2" style="left: 8%;">
+                            <span class="text-[10px] text-slate-400 block">Floor</span>
+                            <span class="font-bold text-slate-900 mono">₹710</span>
+                        </div>
+                        <div class="absolute text-center -translate-x-1/2" style="left: 29%;">
+                            <span class="text-[10px] text-emerald-700 font-bold block">Buy zone</span>
+                            <span class="font-bold text-emerald-800 mono">₹745–775</span>
+                        </div>
+                        <div class="absolute text-center -translate-x-1/2" style="left: 74%;">
+                            <span class="text-[10px] text-indigo-600 font-semibold block">Fair value</span>
+                            <span class="font-bold text-slate-900 mono">₹920</span>
+                        </div>
+                        <div class="absolute text-center -translate-x-1/2" style="left: 95%;">
+                            <span class="text-[10px] text-slate-400 block">Bull case</span>
+                            <span class="font-bold text-slate-900 mono">₹1,058</span>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="text-xs text-slate-600">
+                    To reach the buy zone the price has to fall about <strong>5% to 9%</strong> from here.
+                </p>
+
+                <!-- 3 Outcome Cards Below Slider -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                    <div class="border border-slate-200 p-4 rounded-xl space-y-1">
+                        <p class="text-xl font-bold text-emerald-600 mono">+12.5%</p>
+                        <span class="text-xs font-semibold text-slate-900 block">Possible gain</span>
+                        <p class="text-[11px] text-slate-500">If it reaches fair value (₹920)</p>
+                    </div>
+                    <div class="border border-slate-200 p-4 rounded-xl space-y-1">
+                        <p class="text-xl font-bold text-rose-500 mono">−13.2%</p>
+                        <span class="text-xs font-semibold text-slate-900 block">Downside risk</span>
+                        <p class="text-[11px] text-slate-500">Fall if it drops to the floor (₹710)</p>
+                    </div>
+                    <div class="border border-slate-200 p-4 rounded-xl space-y-1">
+                        <p class="text-xl font-bold text-slate-900 mono">6 in 10</p>
+                        <span class="text-xs font-semibold text-slate-900 block">Beats Bank Nifty</span>
+                        <p class="text-[11px] text-slate-500">Chance it beats the Bank Nifty index over 6 months</p>
+                    </div>
                 </div>
             </div>
-        </div>
+
+            <!-- Why did it jump? (Institutional Event Explanation) -->
+            <div class="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-sm space-y-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <h3 class="text-sm font-bold text-slate-900">Why did it jump?</h3>
+                        <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[11px] font-semibold border border-emerald-200">
+                            MSCI Rebalancing & Inflows
+                        </span>
+                    </div>
+                    <span class="text-xs text-slate-400 font-medium">NSE filings verified</span>
+                </div>
+                <p class="text-xs text-slate-600 leading-relaxed">
+                    Scheduled MSCI index weight doubling triggered an estimated <strong>$3.5B+ in non-discretionary passive foreign buying</strong>, while Q2 deposit mobilization (15.1% YoY) reassured markets that the post-merger Credit-to-Deposit ratio is declining safely below 98%. However, a 16.8% sprint in 10 trading days pushes short-term momentum into extreme overbought territory (Wilder RSI 88.7). Until the surge pauses and consolidates, treat the rally with caution.
+                </p>
+            </div>
+        </section>
 
         <!-- ========================================================================= -->
-        <!-- TAB 2: WHY (DETAILED FUNDAMENTALS, CONTINUOUS SENSITIVITY MATRIX)          -->
+        <!-- 3. FIVE ACCUMULATION GATES                                                 -->
         <!-- ========================================================================= -->
-        <div id="tabContentWhy" class="hidden space-y-6">
-            <div class="bg-white border border-slate-200 rounded-2xl p-7 shadow-sm space-y-6">
+        <section id="sectionChecks" class="scroll-mt-28 space-y-4">
+            <div class="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-7 shadow-sm space-y-5">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900">Five checks before any money moves</h3>
+                        <p class="text-xs text-slate-500">Select a row to see the exact evidence and threshold evaluation.</p>
+                    </div>
+                    <span class="px-2.5 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">
+                        4 passed · 1 waiting
+                    </span>
+                </div>
+
+                <!-- 5 Interactive Rows -->
+                <div class="space-y-3">
+                    <!-- Check 1: Cheap -->
+                    <details class="group bg-white border border-slate-200 rounded-xl p-4 text-xs transition">
+                        <summary class="flex justify-between items-center cursor-pointer list-none">
+                            <div class="flex items-center gap-3">
+                                <div class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xs">✓</div>
+                                <div>
+                                    <span class="font-bold text-slate-900 text-sm block">Is it cheap?</span>
+                                    <span class="text-slate-500 text-xs">Yes. Cheaper than usual.</span>
+                                </div>
+                            </div>
+                            <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px]">PASS</span>
+                        </summary>
+                        <div class="pt-3 text-xs text-slate-600 border-t border-slate-100 mt-2.5 space-y-1">
+                            <p>• Price-to-Book sits at <strong>2.07x</strong>, which is in the bottom 16% of post-merger history.</p>
+                            <p>• Trades at a 33% discount to peer ICICI Bank (3.10x P/B).</p>
+                        </div>
+                    </details>
+
+                    <!-- Check 2: Healthy -->
+                    <details class="group bg-white border border-slate-200 rounded-xl p-4 text-xs transition">
+                        <summary class="flex justify-between items-center cursor-pointer list-none">
+                            <div class="flex items-center gap-3">
+                                <div class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xs">✓</div>
+                                <div>
+                                    <span class="font-bold text-slate-900 text-sm block">Is the bank healthy?</span>
+                                    <span class="text-slate-500 text-xs">Yes. Passed every balance-sheet test.</span>
+                                </div>
+                            </div>
+                            <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px]">PASS</span>
+                        </summary>
+                        <div class="pt-3 text-xs text-slate-600 border-t border-slate-100 mt-2.5 space-y-1">
+                            <p>• Bad loans are low: Gross NPA 1.11%, Net NPA 0.33% (well below the 1.5% limit).</p>
+                            <p>• Capital cushion is high: CAR 19.3% vs 11.5% regulatory minimum.</p>
+                        </div>
+                    </details>
+
+                    <!-- Check 3: Base Formed -->
+                    <details class="group bg-white border border-slate-200 rounded-xl p-4 text-xs transition">
+                        <summary class="flex justify-between items-center cursor-pointer list-none">
+                            <div class="flex items-center gap-3">
+                                <div class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xs">✓</div>
+                                <div>
+                                    <span class="font-bold text-slate-900 text-sm block">Has it stopped falling?</span>
+                                    <span class="text-slate-500 text-xs">Yes. It looks like it has formed a base.</span>
+                                </div>
+                            </div>
+                            <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px]">PASS</span>
+                        </summary>
+                        <div class="pt-3 text-xs text-slate-600 border-t border-slate-100 mt-2.5 space-y-1">
+                            <p>• Downside momentum halted at ₹710 floor and price recovered above 50-day moving average.</p>
+                        </div>
+                    </details>
+
+                    <!-- Check 4: Good Time (WAIT) -->
+                    <details class="group bg-amber-50/40 border border-amber-300 rounded-xl p-4 text-xs transition" open>
+                        <summary class="flex justify-between items-center cursor-pointer list-none">
+                            <div class="flex items-center gap-3">
+                                <div class="w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xs">!</div>
+                                <div>
+                                    <span class="font-bold text-slate-900 text-sm block">Is now a good time?</span>
+                                    <span class="text-amber-800 text-xs font-medium">Not yet. It rose too fast.</span>
+                                </div>
+                            </div>
+                            <span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 font-bold text-[11px]">WAIT</span>
+                        </summary>
+                        <div class="pt-3 text-xs text-slate-700 border-t border-amber-200 mt-2.5 space-y-1.5 leading-relaxed">
+                            <p class="font-bold text-slate-900">The price rose 16.8% in 10 trading days. After sprints like this, prices often pause or dip, so the plan waits.</p>
+                            <p class="text-slate-600">14-day Wilder RSI reached 88.7. Tactical accumulation requires patient limit orders at ₹745–₹775 instead of chasing market tops.</p>
+                        </div>
+                    </details>
+
+                    <!-- Check 5: Risk Limits -->
+                    <details class="group bg-white border border-slate-200 rounded-xl p-4 text-xs transition">
+                        <summary class="flex justify-between items-center cursor-pointer list-none">
+                            <div class="flex items-center gap-3">
+                                <div class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xs">✓</div>
+                                <div>
+                                    <span class="font-bold text-slate-900 text-sm block">Is it within your risk limits?</span>
+                                    <span class="text-slate-500 text-xs">Yes. 80% stays in cash.</span>
+                                </div>
+                            </div>
+                            <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px]">PASS</span>
+                        </summary>
+                        <div class="pt-3 text-xs text-slate-600 border-t border-slate-100 mt-2.5 space-y-1">
+                            <p>• Tranche #1 uses ₹2.00 Lakhs (20% of your ₹10L budget).</p>
+                            <p>• Total wealth concentration stays safely under the 15% single-stock ceiling.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================================================= -->
+        <!-- 4. LATEST EARNINGS CALL & MANAGEMENT GUIDANCE (CONCALL INTELLIGENCE)        -->
+        <!-- ========================================================================= -->
+        <section id="sectionEarnings" class="scroll-mt-28 space-y-6">
+            <div class="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-7 shadow-sm space-y-6">
+                <!-- Header with Scores and Badges -->
+                <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                            <h3 class="text-base font-bold text-slate-900">Latest Earnings Call & Management Guidance (Concall)</h3>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-0.5">Official HDFC Bank Q2 FY26 Earnings Conference Call · Factored & Weighted</p>
+                    </div>
+                    <div class="flex items-center gap-2.5">
+                        <span id="earningsCallTone" class="px-2.5 py-1 rounded bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-200">
+                            BALANCED / DISCIPLINED
+                        </span>
+                        <span id="earningsCallScore" class="px-2.5 py-1 rounded bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 mono">
+                            81.2 / 100
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Plain Summary of Earnings Concall -->
+                <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-4 text-xs text-slate-700 leading-relaxed space-y-1">
+                    <span class="font-bold text-slate-900 block text-xs uppercase tracking-wide">Executive Thesis & Guidance Synthesis</span>
+                    <p id="earningsSummaryPlain">
+                        HDFC Bank's Q2 earnings call reflects a disciplined 'profitability-over-size' stance. Management confirmed that loan growth (7.0%) is being intentionally slowed to allow deposits (15.1%) to normalize the Credit-to-Deposit ratio. Fortress capital (19.3% CAR) and pristine credit costs (0.42%) remove any risk of balance sheet distress, yielding a high weighted guidance score of 81.2/100.
+                    </p>
+                </div>
+
+                <!-- 5 Weighted Pillars Grid -->
+                <div class="space-y-2">
+                    <span class="text-xs font-bold text-slate-900 uppercase tracking-wide block">Strategic Guidance Across 5 Banking Pillars</span>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5" id="guidancePillarsGrid">
+                        <!-- Pillars injected by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Analyst Inquiries vs Management Rebuttals (Concall Q&A) -->
+                <details class="group bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 text-xs">
+                    <summary class="flex justify-between items-center font-bold text-slate-900 cursor-pointer list-none">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                            <span>Concall Q&A Highlights: Analyst Inquiries & Management Rebuttals</span>
+                        </div>
+                        <span class="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div class="pt-3 border-t border-slate-200/80 mt-2.5 space-y-3" id="concallQaList">
+                        <!-- Q&A pairs injected by JavaScript -->
+                    </div>
+                </details>
+            </div>
+        </section>
+
+        <!-- ========================================================================= -->
+        <!-- 5. VALUATION SENSITIVITY MATRIX & BALANCE SHEET RECONCILIATION             -->
+        <!-- ========================================================================= -->
+        <section id="sectionValuation" class="scroll-mt-28 space-y-6">
+            <div class="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-7 shadow-sm space-y-6">
                 <div>
-                    <h3 class="text-lg font-bold text-slate-900">Fair Value Sensitivity Matrix (Continuous Residual Income)</h3>
+                    <h3 class="text-base font-bold text-slate-900">Fair Value Sensitivity Matrix (Continuous Residual Income)</h3>
                     <p class="text-xs text-slate-500">
                         Derived from continuous Gordon Growth equation without step-jumps: Justified P/B scales in an exact straight line with ROE.
                     </p>
@@ -517,7 +591,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     </table>
                 </div>
 
-                <!-- Peer Valuation Check: ICICI Bank -->
+                <!-- 4 Operational & Balance Sheet Tiles -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                     <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/80 space-y-1">
                         <span class="text-xs font-bold text-slate-900">Peer Valuation Gap (ICICI Bank)</span>
@@ -534,7 +608,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 </div>
 
                 <!-- Filing-Derived ROE & CAR Reconciliation -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/80 space-y-1">
                         <span class="text-xs font-bold text-slate-900">Filing-Derived ROE (Q2 FY26)</span>
                         <p class="text-xs text-slate-600 leading-relaxed">
@@ -549,14 +623,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- ========================================================================= -->
-        <!-- TAB 3: PROOF (AUDITED BACKTEST & ALL 8 HISTORICAL OCCURRENCES)             -->
+        <!-- 6. AUDITED HISTORICAL PROOF & BACKTEST                                     -->
         <!-- ========================================================================= -->
-        <div id="tabContentProof" class="hidden space-y-6">
-            <!-- Backtest Section -->
-            <div class="bg-white border border-slate-200 rounded-2xl p-7 shadow-sm space-y-4">
+        <section id="sectionProof" class="scroll-mt-28 space-y-6">
+            <div class="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-7 shadow-sm space-y-6">
+                <!-- Backtest Header -->
                 <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
                     <div>
                         <h3 class="text-base font-bold text-slate-900">Audited Historical Backtest</h3>
@@ -569,248 +643,189 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     </select>
                 </div>
 
-                <div class="h-64 w-full relative">
+                <!-- Backtest Canvas Chart -->
+                <div class="w-full h-80 relative">
                     <canvas id="equityChart"></canvas>
                 </div>
-            </div>
 
-            <!-- Historical Occurrences Table -->
-            <div class="bg-white border border-slate-200 rounded-2xl p-7 shadow-sm space-y-4">
-                <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                    <div>
-                        <h3 class="text-base font-bold text-slate-900">All Past Occurrences of this Cyclical Setup</h3>
-                        <p class="text-xs text-slate-500">Auditing every historical episode matching this valuation & drawdown rule</p>
+                <!-- Past Occurrences Header -->
+                <div class="pt-4 border-t border-slate-100 space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h4 class="text-sm font-bold text-slate-900">All Past Occurrences of this Cyclical Setup</h4>
+                            <p class="text-xs text-slate-500">Auditing every historical episode matching this valuation & drawdown rule</p>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs font-semibold mono" id="analogueHeaderStats">
+                            <span class="px-2.5 py-1 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">6M Hit Rate: 62.5%</span>
+                            <span class="px-2.5 py-1 rounded bg-rose-50 text-rose-800 border border-rose-200">Worst MAE: -14.6%</span>
+                        </div>
                     </div>
-                    <div class="text-xs mono" id="analogueHeaderStats">
-                        <span class="px-2.5 py-1 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">6M Hit Rate: 62.5%</span>
-                        <span class="px-2.5 py-1 rounded bg-rose-50 text-rose-800 border border-rose-200">Worst MAE: -14.6%</span>
+
+                    <!-- Past Cases Table -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs border border-slate-200 rounded-xl overflow-hidden">
+                            <thead class="bg-slate-50 text-slate-500 mono border-b border-slate-200 text-[11px]">
+                                <tr>
+                                    <th class="p-3">Episode Name & Date</th>
+                                    <th class="p-3">Regime Era</th>
+                                    <th class="p-3">Entry Price & P/B</th>
+                                    <th class="p-3">6M Return</th>
+                                    <th class="p-3">1-Year Return</th>
+                                    <th class="p-3">Worst Drop (MAE)</th>
+                                    <th class="p-3">Data Source</th>
+                                    <th class="p-3">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="analogueTableBody" class="divide-y divide-slate-100 mono">
+                                <!-- Injected by renderAnalogues -->
+                            </tbody>
+                        </table>
                     </div>
-                </div>
 
-                <!-- Episodes Table -->
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-xs text-slate-700">
-                        <thead class="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 mono">
-                            <tr>
-                                <th class="p-3">Episode Name & Date</th>
-                                <th class="p-3">Regime Era</th>
-                                <th class="p-3">Entry Price & P/B</th>
-                                <th class="p-3">6M Return</th>
-                                <th class="p-3">1-Year Return</th>
-                                <th class="p-3">Worst Drop (MAE)</th>
-                                <th class="p-3">Data Source</th>
-                                <th class="p-3">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100 mono" id="analogueTableBody">
-                            <!-- Populated via JS -->
-                        </tbody>
-                    </table>
+                    <p class="text-[11px] text-slate-400 italic">
+                        Statistical Disclaimer: Small sample, n=8 (95% CI on 62.5% hit rate: [30.6%, 86.3%]). Zero cherry-picked winners.
+                    </p>
                 </div>
-
-                <p class="text-[11px] text-slate-500 pt-1">
-                    Statistical Disclaimer: Small sample, n=8 (95% CI on 62.5% hit rate: [30.6%, 86.3%]). Zero cherry-picked winners.
-                </p>
             </div>
-        </div>
+        </section>
 
         <!-- ========================================================================= -->
-        <!-- TAB 4: DATA HEALTH (2 ITEMS NEEDING CHECKING & RECONCILIATION)             -->
+        <!-- 7. DATA HEALTH & IMMUTABLE CRYPTOGRAPHIC LEDGER                             -->
         <!-- ========================================================================= -->
-        <div id="tabContentHealth" class="hidden space-y-6">
-            <div class="bg-white border border-slate-200 rounded-2xl p-7 shadow-sm space-y-6">
+        <section id="sectionHealth" class="scroll-mt-28 space-y-6">
+            <div class="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-7 shadow-sm space-y-6">
                 <div>
-                    <h3 class="text-lg font-bold text-slate-900">Data Health & Audit Reconciliation</h3>
+                    <h3 class="text-base font-bold text-slate-900">Data Health & Audit Reconciliation</h3>
                     <p class="text-xs text-slate-500">Checking corporate filings, share count math, and data boundaries for absolute integrity.</p>
                 </div>
 
-                <!-- 2 Flagged Verification Cards -->
-                <div class="space-y-4">
-                    <!-- Check 1: Share Count & Book Value Reconciliation -->
-                    <div class="border border-emerald-200 bg-emerald-50/20 rounded-xl p-5 space-y-2">
-                        <div class="flex items-center justify-between">
-                            <span class="text-xs font-bold uppercase tracking-wider text-emerald-800 mono">1. Share Count & Net Worth Math (Reconciled)</span>
-                            <span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[11px] font-bold">VERIFIED</span>
-                        </div>
-                        <p class="text-xs text-slate-700 leading-relaxed">
-                            Following the post-merger recapitalization in FY26, HDFC Bank's equity capital expanded to <strong>₹1,539 Cr</strong> (representing <strong>15.39 billion shares</strong> at ₹1 face value). Total Shareholder Equity (Net Worth) is <strong>₹6,07,600 Cr</strong>.
-                        </p>
-                        <div class="p-3 rounded-lg bg-white border border-slate-200 mono text-xs text-slate-800 space-y-1">
-                            <p>• Book Value Per Share: ₹6,07,600 Cr / 15.39 bn shares = <strong>₹394.84</strong>.</p>
-                            <p>• Market Capitalization: 15.39 bn shares × ₹817.80 = <strong>₹12,58,600 Cr</strong> (~₹12.59 lakh crore).</p>
-                            <p>• P/B Ratio: ₹817.80 / ₹394.84 = <strong>2.07x</strong> (16th percentile post-merger).</p>
-                        </div>
-                        <span class="text-[10px] text-slate-500 block">Note: An earlier draft cited FY24 equity (₹4,54,600 Cr) before the 15.39 bn recapitalization. Both share count and BVPS are now 100% aligned.</span>
+                <!-- 1. Share Count & BVPS Reconciliation -->
+                <div class="bg-slate-50 border border-emerald-300 rounded-xl p-5 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-emerald-900 mono">1. SHARE COUNT & NET WORTH MATH (RECONCILED)</span>
+                        <span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">VERIFIED</span>
                     </div>
+                    <p class="text-xs text-slate-700 leading-relaxed">
+                        Following the post-merger recapitalization in FY26, HDFC Bank's equity capital expanded to <strong>₹1,539 Cr</strong> (representing <strong>15.39 billion shares</strong> at ₹1 face value). Total Shareholder Equity (Net Worth) is <strong>₹6,07,600 Cr</strong>.
+                    </p>
+                    <div class="bg-white p-3 rounded-lg border border-slate-200 text-xs mono text-slate-700 space-y-1">
+                        <p>• Book Value Per Share: ₹6,07,600 Cr / 15.39 bn shares = <strong>₹394.84</strong>.</p>
+                        <p>• Market Capitalization: 15.39 bn shares × ₹817.80 = <strong>₹12,58,600 Cr</strong> (~₹12.59 lakh crore).</p>
+                        <p>• P/B Ratio: ₹817.80 / ₹394.84 = <strong>2.07x</strong> (16th percentile post-merger).</p>
+                    </div>
+                    <p class="text-[11px] text-slate-500 italic">
+                        Note: An earlier draft cited FY24 equity (₹4,54,600 Cr) before the 15.39 bn recapitalization. Both share count and BVPS are now 100% aligned.
+                    </p>
+                </div>
 
-                    <!-- Check 2: Historical Data Window Boundary -->
-                    <div class="border border-indigo-200 bg-indigo-50/20 rounded-xl p-5 space-y-2">
-                        <div class="flex items-center justify-between">
-                            <span class="text-xs font-bold uppercase tracking-wider text-indigo-800 mono">2. Historical Price Data Boundary (Documented)</span>
-                            <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-[11px] font-bold">DOCUMENTED</span>
-                        </div>
-                        <p class="text-xs text-slate-700 leading-relaxed">
-                            The engine's local cache of official NSE adjusted daily bars covers <strong>November 17, 2021 to November 17, 2026</strong> (1,236 bars).
-                        </p>
-                        <div class="p-3 rounded-lg bg-white border border-slate-200 mono text-xs text-slate-800 space-y-1">
-                            <p>• Episodes June 2022 to Oct 2024: Computed directly from daily bars.</p>
-                            <p>• Episodes March 2020 & May 2021: Labeled as External Out-of-Sample Historical Stress Controls.</p>
-                        </div>
+                <!-- 2. Historical Price Data Boundary -->
+                <div class="bg-slate-50 border border-indigo-200 rounded-xl p-5 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-indigo-900 mono">2. HISTORICAL PRICE DATA BOUNDARY (DOCUMENTED)</span>
+                        <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-[10px] font-bold">DOCUMENTED</span>
+                    </div>
+                    <p class="text-xs text-slate-700 leading-relaxed">
+                        The engine's local cache of official NSE adjusted daily bars covers <strong>November 17, 2021 to November 17, 2026</strong> (1,236 bars).
+                    </p>
+                    <div class="bg-white p-3 rounded-lg border border-slate-200 text-xs mono text-slate-700 space-y-1">
+                        <p>• Episodes June 2022 to Oct 2024: Computed directly from daily bars.</p>
+                        <p>• Episodes March 2020 & May 2021: Labeled as External Out-of-Sample Historical Stress Controls.</p>
                     </div>
                 </div>
 
-                <!-- SQLite Decision Ledger Audit -->
-                <div class="pt-4 border-t border-slate-100 space-y-3">
-                    <h4 class="text-xs font-bold text-slate-900 uppercase mono">Immutable Ledger SHA-256 Hashes</h4>
-                    <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs text-slate-700 space-y-1.5 max-h-40 overflow-y-auto" id="healthLedgerList">
-                        <!-- Populated via JS -->
+                <!-- 3. Immutable Decision Ledger SHA-256 Hashes -->
+                <div class="space-y-2 pt-2">
+                    <span class="text-xs font-bold text-slate-900 uppercase mono block tracking-wider">Immutable Ledger SHA-256 Hashes</span>
+                    <div id="healthLedgerList" class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-[11px] mono text-slate-600 space-y-1 max-h-48 overflow-y-auto">
+                        <!-- Injected by renderHealthLedger -->
                     </div>
                 </div>
             </div>
-        </div>
-
-        <!-- ========================================================================= -->
-        <!-- WATCHLIST SCREEN (MATCHING PAGE 4 OF MOCKUP)                              -->
-        <!-- ========================================================================= -->
-        <div id="tabContentWatchlist" class="hidden space-y-6">
-            <!-- Header Summary Counters -->
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
-                    <span class="text-xs text-slate-500 font-medium block">Waiting for a dip</span>
-                    <p class="text-2xl font-bold text-slate-900 mono">1</p>
-                    <span class="text-xs text-slate-400 block">HDFC Bank, buy order ₹745–775</span>
-                </div>
-                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
-                    <span class="text-xs text-slate-500 font-medium block">Ready to buy</span>
-                    <p class="text-2xl font-bold text-slate-900 mono">0</p>
-                    <span class="text-xs text-slate-400 block">No stock is inside its buy zone</span>
-                </div>
-                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
-                    <span class="text-xs text-slate-500 font-medium block">Numbers needing a check</span>
-                    <p class="text-2xl font-bold text-rose-600 mono">2</p>
-                    <span class="text-xs text-slate-400 block">Price to book value, return on equity</span>
-                </div>
-                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
-                    <span class="text-xs text-slate-500 font-medium block">Alerts switched on</span>
-                    <p class="text-2xl font-bold text-emerald-600 mono">2</p>
-                    <span class="text-xs text-slate-400 block">By WhatsApp and email</span>
-                </div>
-            </div>
-
-            <!-- Stocks Table -->
-            <div class="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 shadow-sm space-y-4">
-                <div class="flex items-center justify-between pb-3 border-b border-slate-100">
-                    <div>
-                        <h3 class="text-base font-bold text-slate-900">Your stocks</h3>
-                        <p class="text-xs text-slate-500">Each stock gets its own plan, its own data checks and its own track record.</p>
-                    </div>
-                    <button class="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition">
-                        + Add a stock
-                    </button>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-xs text-slate-700">
-                        <thead class="bg-slate-50 text-[11px] uppercase text-slate-500 font-semibold">
-                            <tr>
-                                <th class="p-3">Stock</th>
-                                <th class="p-3">Plan today</th>
-                                <th class="p-3">Price</th>
-                                <th class="p-3">Buy zone</th>
-                                <th class="p-3">Distance to zone</th>
-                                <th class="p-3">Data</th>
-                                <th class="p-3 text-right">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            <tr class="hover:bg-slate-50/50">
-                                <td class="p-3 font-bold text-slate-900">
-                                    HDFC Bank<br><span class="text-[10px] text-slate-400 font-normal">NSE: HDFCBANK</span>
-                                </td>
-                                <td class="p-3">
-                                    <span class="px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-bold border border-amber-200">WAIT</span>
-                                </td>
-                                <td class="p-3 mono font-bold text-slate-900">₹817.80</td>
-                                <td class="p-3 mono font-medium">₹745 – ₹775</td>
-                                <td class="p-3 text-amber-700 font-medium">5% to 9% lower</td>
-                                <td class="p-3">
-                                    <span class="px-2 py-0.5 rounded bg-rose-50 text-rose-700 font-semibold border border-rose-200 text-[10px]">2 need checking</span>
-                                </td>
-                                <td class="p-3 text-right">
-                                    <button onclick="switchTab('today')" class="border border-slate-300 hover:bg-slate-100 text-slate-900 font-semibold px-3 py-1 rounded-md text-xs">
-                                        Open
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr class="hover:bg-slate-50/50">
-                                <td class="p-3 font-bold text-slate-900">
-                                    ICICI Bank<br><span class="text-[10px] text-slate-400 font-normal">NSE: ICICIBANK</span>
-                                </td>
-                                <td class="p-3 text-slate-400 colspan-5" colspan="5">
-                                    Not set up. Adding a peer also gives the engine more history to learn from.
-                                </td>
-                                <td class="p-3 text-right">
-                                    <button class="border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold px-3 py-1 rounded-md text-xs">Set up</button>
-                                </td>
-                            </tr>
-                            <tr class="hover:bg-slate-50/50">
-                                <td class="p-3 font-bold text-slate-900">
-                                    Kotak Mahindra Bank<br><span class="text-[10px] text-slate-400 font-normal">NSE: KOTAKBANK</span>
-                                </td>
-                                <td class="p-3 text-slate-400 colspan-5" colspan="5">Not set up.</td>
-                                <td class="p-3 text-right">
-                                    <button class="border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold px-3 py-1 rounded-md text-xs">Set up</button>
-                                </td>
-                            </tr>
-                            <tr class="hover:bg-slate-50/50">
-                                <td class="p-3 font-bold text-slate-900">
-                                    Axis Bank<br><span class="text-[10px] text-slate-400 font-normal">NSE: AXISBANK</span>
-                                </td>
-                                <td class="p-3 text-slate-400 colspan-5" colspan="5">Not set up.</td>
-                                <td class="p-3 text-right">
-                                    <button class="border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold px-3 py-1 rounded-md text-xs">Set up</button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Where this grows next (Roadmap) -->
-            <div class="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 shadow-sm space-y-4">
-                <div>
-                    <h3 class="text-sm font-bold text-slate-900">Where this grows next</h3>
-                    <p class="text-xs text-slate-500">Every new screen reuses the same building blocks: verdict card, price ladder, check row, number tile, proof chart.</p>
-                </div>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-                    <div class="border border-slate-100 bg-slate-50 p-4 rounded-xl space-y-1.5">
-                        <span class="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 uppercase">Planned</span>
-                        <h4 class="font-bold text-slate-900">Decision journal</h4>
-                        <p class="text-slate-600 leading-relaxed">Record what you actually did next to what the engine said, so you can see who was right.</p>
-                    </div>
-                    <div class="border border-slate-100 bg-slate-50 p-4 rounded-xl space-y-1.5">
-                        <span class="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 uppercase">Planned</span>
-                        <h4 class="font-bold text-slate-900">What changed since yesterday</h4>
-                        <p class="text-slate-600 leading-relaxed">A short list of what moved the verdict: price, news, a filing, a data fix.</p>
-                    </div>
-                    <div class="border border-slate-100 bg-slate-50 p-4 rounded-xl space-y-1.5">
-                        <span class="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 uppercase">Planned</span>
-                        <h4 class="font-bold text-slate-900">Model experiments</h4>
-                        <p class="text-slate-600 leading-relaxed">New versions run quietly beside the current one. You approve a switch only if the proof holds.</p>
-                    </div>
-                    <div class="border border-slate-100 bg-slate-50 p-4 rounded-xl space-y-1.5">
-                        <span class="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 uppercase">Planned</span>
-                        <h4 class="font-bold text-slate-900">Sector view</h4>
-                        <p class="text-slate-600 leading-relaxed">See all banks on one ladder: who is cheap, who is healthy, who is stretched.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
+        </section>
 
     </main>
 
-    <!-- Phone View Modal (Matching Page 3) -->
+    <!-- Watchlist Modal -->
+    <div id="watchlistModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 shadow-2xl p-6 sm:p-7 space-y-6">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-900">Banking Watchlist & Multi-Stock Expansion</h3>
+                    <p class="text-xs text-slate-500">Each stock receives its own balance-sheet gates, valuation ladder, and cryptographic track record.</p>
+                </div>
+                <button onclick="toggleWatchlistModal()" class="text-slate-400 hover:text-slate-900 font-bold text-lg">✕</button>
+            </div>
+
+            <!-- Top Summary Tiles -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <span class="text-slate-500 block">Waiting for a dip</span>
+                    <span class="text-2xl font-bold text-slate-900 mono block mt-1">1</span>
+                    <span class="text-[10px] text-slate-400">HDFC Bank, buy order ₹745–775</span>
+                </div>
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <span class="text-slate-500 block">Ready to buy</span>
+                    <span class="text-2xl font-bold text-slate-900 mono block mt-1">0</span>
+                    <span class="text-[10px] text-slate-400">No stock is inside its buy zone</span>
+                </div>
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <span class="text-slate-500 block">Numbers needing a check</span>
+                    <span class="text-2xl font-bold text-rose-600 mono block mt-1">2</span>
+                    <span class="text-[10px] text-slate-400">Price to book value, return on equity</span>
+                </div>
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <span class="text-slate-500 block">Alerts switched on</span>
+                    <span class="text-2xl font-bold text-emerald-600 mono block mt-1">2</span>
+                    <span class="text-[10px] text-slate-400">By WhatsApp and email</span>
+                </div>
+            </div>
+
+            <!-- Table of Stocks -->
+            <div class="border border-slate-200 rounded-xl overflow-hidden">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-50 text-slate-500 border-b border-slate-200 text-[11px] mono">
+                        <tr>
+                            <th class="p-3">Stock</th>
+                            <th class="p-3">Plan Today</th>
+                            <th class="p-3">Price</th>
+                            <th class="p-3">Buy Zone</th>
+                            <th class="p-3">Distance to Zone</th>
+                            <th class="p-3">Data</th>
+                            <th class="p-3">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-slate-700">
+                        <tr>
+                            <td class="p-3 font-bold text-slate-900">HDFC Bank <span class="text-slate-400 font-normal">NSE: HDFCBANK</span></td>
+                            <td class="p-3"><span class="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-bold">WAIT</span></td>
+                            <td class="p-3 mono font-bold">₹817.80</td>
+                            <td class="p-3 mono">₹745 – ₹775</td>
+                            <td class="p-3 text-amber-700 font-medium">5% to 9% lower</td>
+                            <td class="p-3"><span class="px-2 py-0.5 rounded bg-rose-50 text-rose-700 text-[10px] font-semibold border border-rose-200">2 need checking</span></td>
+                            <td class="p-3"><button onclick="toggleWatchlistModal()" class="px-3 py-1 rounded bg-slate-900 text-white font-medium hover:bg-slate-800">Open</button></td>
+                        </tr>
+                        <tr class="bg-slate-50/50">
+                            <td class="p-3 font-semibold text-slate-700">ICICI Bank <span class="text-slate-400 font-normal">NSE: ICICIBANK</span></td>
+                            <td colspan="5" class="p-3 text-slate-500 italic">Not set up. Adding a peer also gives the engine more history to learn from.</td>
+                            <td class="p-3"><button class="px-3 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">Set up</button></td>
+                        </tr>
+                        <tr>
+                            <td class="p-3 font-semibold text-slate-700">Kotak Mahindra Bank <span class="text-slate-400 font-normal">NSE: KOTAKBANK</span></td>
+                            <td colspan="5" class="p-3 text-slate-500 italic">Not set up.</td>
+                            <td class="p-3"><button class="px-3 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">Set up</button></td>
+                        </tr>
+                        <tr class="bg-slate-50/50">
+                            <td class="p-3 font-semibold text-slate-700">Axis Bank <span class="text-slate-400 font-normal">NSE: AXISBANK</span></td>
+                            <td colspan="5" class="p-3 text-slate-500 italic">Not set up.</td>
+                            <td class="p-3"><button class="px-3 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">Set up</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phone View Modal -->
     <div id="phoneViewModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-white w-full max-w-[380px] max-h-[90vh] overflow-y-auto rounded-[32px] border-4 border-slate-800 shadow-2xl p-5 space-y-5">
             <div class="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -868,6 +883,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
     </div>
 
+    <!-- Scripts -->
     <script>
         let equityChartInstance = null;
 
@@ -883,28 +899,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }
         }
 
-        function switchTab(tabId) {
-            const tabs = ['today', 'why', 'proof', 'health', 'watchlist'];
-            tabs.forEach(t => {
-                const el = document.getElementById('tabContent' + t.charAt(0).toUpperCase() + t.slice(1));
-                const btn = document.getElementById('tabNav' + t.charAt(0).toUpperCase() + t.slice(1));
-                if (el) el.classList.add('hidden');
-                if (btn) btn.classList.remove('active');
-            });
-
-            const activeEl = document.getElementById('tabContent' + tabId.charAt(0).toUpperCase() + tabId.slice(1));
-            const activeBtn = document.getElementById('tabNav' + tabId.charAt(0).toUpperCase() + tabId.slice(1));
-            if (activeEl) activeEl.classList.remove('hidden');
-            if (activeBtn) activeBtn.classList.add('active');
-
-            if (tabId === 'proof') {
-                runBacktest();
-            }
+        function toggleWatchlistModal() {
+            document.getElementById('watchlistModal').classList.toggle('hidden');
         }
 
         function togglePhoneViewModal() {
-            const m = document.getElementById('phoneViewModal');
-            m.classList.toggle('hidden');
+            document.getElementById('phoneViewModal').classList.toggle('hidden');
         }
 
         async function fetchStatus() {
@@ -925,8 +925,74 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 if (data.scoreboard && data.scoreboard.live_records) {
                     renderHealthLedger(data.scoreboard);
                 }
+
+                if (data.transcript_report) {
+                    renderEarnings(data.transcript_report);
+                }
+
+                // Automatically trigger backtest on initial page load
+                runBacktest();
             } catch (e) {
                 console.error("fetchStatus error:", e);
+            }
+        }
+
+        function renderEarnings(tr) {
+            if (!tr) return;
+            document.getElementById('earningsCallTone').textContent = tr.overall_management_tone;
+            document.getElementById('earningsCallScore').textContent = `${tr.total_weighted_score} / 100`;
+            document.getElementById('earningsSummaryPlain').textContent = tr.transcript_summary_plain;
+
+            const grid = document.getElementById('guidancePillarsGrid');
+            if (grid && tr.pillars) {
+                grid.innerHTML = tr.pillars.map(p => {
+                    const toneBadge = p.guidance_tone === 'CONSTRUCTIVE' 
+                        ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">CONSTRUCTIVE</span>'
+                        : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">NEUTRAL</span>';
+                    
+                    return `
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2.5 flex flex-col justify-between">
+                            <div class="space-y-1.5">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-slate-900">${p.pillar_name}</span>
+                                    ${toneBadge}
+                                </div>
+                                <div class="flex items-baseline justify-between text-xs pt-1">
+                                    <span class="text-slate-500">Weight: <strong>${p.weight_pct}%</strong></span>
+                                    <span class="font-extrabold text-slate-900 mono">Score: ${p.sentiment_score}/100</span>
+                                </div>
+                                <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                    <div class="bg-emerald-500 h-full rounded-full" style="width: ${p.sentiment_score}%"></div>
+                                </div>
+                                <p class="text-[11px] text-slate-600 leading-relaxed pt-1">
+                                    <strong>Target:</strong> ${p.target_metric}
+                                </p>
+                            </div>
+                            <div class="pt-2.5 border-t border-slate-200/70 text-[11px] text-slate-600 italic">
+                                "${p.key_quote}"
+                                <span class="block not-italic font-semibold text-slate-800 text-[10px] pt-1">— ${p.executive_speaker}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            const qaList = document.getElementById('concallQaList');
+            if (qaList && tr.analyst_concerns_raised) {
+                let html = '';
+                for (let i = 0; i < tr.analyst_concerns_raised.length; i++) {
+                    html += `
+                        <div class="p-3 bg-white rounded-lg border border-slate-200 text-xs space-y-1.5">
+                            <p class="text-slate-800 font-semibold">
+                                <span class="text-rose-600 font-bold">Analyst Inquiry:</span> "${tr.analyst_concerns_raised[i]}"
+                            </p>
+                            <p class="text-slate-600 leading-relaxed">
+                                <span class="text-emerald-700 font-bold">Management Rebuttal:</span> "${tr.management_rebuttals[i]}"
+                            </p>
+                        </div>
+                    `;
+                }
+                qaList.innerHTML = html;
             }
         }
 
@@ -984,8 +1050,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
 
         async function runBacktest() {
-            const period = document.getElementById('selectPeriod').value;
-            const canvas = document.getElementById('equityChart');
+            const periodSelect = document.getElementById('selectPeriod');
+            const period = periodSelect ? periodSelect.value : '2y';
 
             try {
                 const res = await fetch(`/api/backtest?period=${period}`);
@@ -1000,7 +1066,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
 
         function renderChart(curve) {
-            const ctx = document.getElementById('equityChart').getContext('2d');
+            const canvas = document.getElementById('equityChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
             if (equityChartInstance) {
                 equityChartInstance.destroy();
             }
@@ -1078,11 +1146,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
 
         const urlParams = new URLSearchParams(window.location.search);
-        const initialTab = urlParams.get('tab') || window.location.hash.replace('#', '');
-        if (initialTab && ['today', 'why', 'proof', 'health', 'watchlist'].includes(initialTab.toLowerCase())) {
-            switchTab(initialTab.toLowerCase());
-        }
-        if (urlParams.get('modal') === 'phone') {
+        if (urlParams.get('modal') === 'watchlist') {
+            toggleWatchlistModal();
+        } else if (urlParams.get('modal') === 'phone') {
             togglePhoneViewModal();
         }
 
@@ -1188,6 +1254,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
                 chain_valid, chain_errors = verify_decision_chain_integrity()
 
+                transcript_report = EarningsTranscriptEngine.get_latest_transcript_report()
+
                 data = {
                     "quote": quote,
                     "reference_price": current_price,
@@ -1241,7 +1309,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     "chain_valid": chain_valid,
                     "analogues": analogues_report,
                     "events": events,
-                    "horizons": horizons
+                    "horizons": horizons,
+                    "transcript_report": {
+                        **transcript_report.__dict__,
+                        "pillars": [p.__dict__ for p in transcript_report.pillars]
+                    }
                 }
                 self._send_json(data)
             except Exception as e:
