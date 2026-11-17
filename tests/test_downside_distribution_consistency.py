@@ -67,10 +67,13 @@ class TestDownsideDistributionConsistency(unittest.TestCase):
         self.assertIn("limit order in the pullback zone", tranche.non_conflicting_action_text)
 
     def test_sensitivity_table_and_filing_reconciliation(self):
-        """Tests sensitivity table coverage and CAR 19.3% vs 18.9% reconciliation."""
+        """Tests sensitivity table linearity, share count reconciliation, and CAR 19.3% vs 18.9%."""
         table = self.ledger.sensitivity_table
         self.assertEqual(table.filing_derived_roe_pct, 14.80)
         self.assertIn("Form 6-K", table.filing_roe_source)
+        self.assertEqual(table.shares_outstanding_bn, 15.39)
+        self.assertEqual(table.total_net_worth_cr, 607600.0)
+        self.assertEqual(self.ledger.current_pb, 2.07)
         self.assertEqual(table.car_total_crar_pct, 19.3)
         self.assertEqual(table.car_tier1_pct, 18.9)
         self.assertIn("Total CRAR 19.3%", table.car_source)
@@ -78,6 +81,13 @@ class TestDownsideDistributionConsistency(unittest.TestCase):
         self.assertEqual(len(table.grid), 3) # 3 ROE rows
         for row in table.grid:
             self.assertEqual(len(row), 3) # 3 Ke cols
+
+        # Test exact linearity: change from 12% to 14% must equal change from 14% to 16%
+        pb_12 = table.grid[0][1].justified_pb
+        pb_14 = table.grid[1][1].justified_pb
+        pb_16 = table.grid[2][1].justified_pb
+        self.assertAlmostEqual(pb_16 - pb_14, pb_14 - pb_12, places=2,
+                               msg=f"Sensitivity table not linear: {pb_16 - pb_14} != {pb_14 - pb_12}")
 
 
 if __name__ == "__main__":

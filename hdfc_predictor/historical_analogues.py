@@ -39,6 +39,7 @@ class HistoricalEpisode:
     outcome_status_6m: str             # "WINNER", "LOSER", "CHOPPY"
     is_clustered: bool                 # True if < 6M from prior episode
     cluster_note: Optional[str]
+    data_source: str                   # "Computed from NSE Daily Bars" or "External Historical Stress Control"
     summary_lesson: str
 
 
@@ -141,6 +142,7 @@ class HistoricalAnalogueEngine:
                 outcome_status_6m="WINNER",
                 is_clustered=False,
                 cluster_note=None,
+                data_source="External Out-of-Sample Stress Control (Pre-2021 Data Window)",
                 summary_lesson="Pristine private lender trading near 2.1x P/B during systemic macro shocks yields outsized recovery."
             ),
             HistoricalEpisode(
@@ -161,6 +163,7 @@ class HistoricalAnalogueEngine:
                 outcome_status_6m="WINNER",
                 is_clustered=False,
                 cluster_note=None,
+                data_source="External Out-of-Sample Stress Control (Pre-2021 Data Window)",
                 summary_lesson="Moderate win at 6M (+14.8%), but turned choppy over 12M as global inflation tightened."
             ),
             HistoricalEpisode(
@@ -181,6 +184,7 @@ class HistoricalAnalogueEngine:
                 outcome_status_6m="LOSER",
                 is_clustered=False,
                 cluster_note=None,
+                data_source="Computed from NSE Daily Bars (2021-2026)",
                 summary_lesson="LOSER AT 6M: Buying initial dip failed because Fed rate hikes continued FII flight down to ₹610 (-14.6% MAE)."
             ),
             HistoricalEpisode(
@@ -201,6 +205,7 @@ class HistoricalAnalogueEngine:
                 outcome_status_6m="WINNER",
                 is_clustered=True,
                 cluster_note="Clustered episode (< 4M from Feb 2022 entry)",
+                data_source="Computed from NSE Daily Bars (2021-2026)",
                 summary_lesson="FII liquidity capitulation bottom formed with negligible further downside (-1.4% MAE)."
             ),
             HistoricalEpisode(
@@ -221,6 +226,7 @@ class HistoricalAnalogueEngine:
                 outcome_status_6m="CHOPPY",
                 is_clustered=False,
                 cluster_note=None,
+                data_source="Computed from NSE Daily Bars (2021-2026)",
                 summary_lesson="CHOPPY SETUP: Modest +4.1% 6M gain; sideways consolidation before merger effective date."
             ),
             HistoricalEpisode(
@@ -241,6 +247,7 @@ class HistoricalAnalogueEngine:
                 outcome_status_6m="CHOPPY",
                 is_clustered=False,
                 cluster_note=None,
+                data_source="Computed from NSE Daily Bars (2021-2026)",
                 summary_lesson="CHOPPY AT 6M (+3.8%), but delivered +20.3% over 1 year as deposit mobilization progressed."
             ),
             HistoricalEpisode(
@@ -261,6 +268,7 @@ class HistoricalAnalogueEngine:
                 outcome_status_6m="WINNER",
                 is_clustered=True,
                 cluster_note="Clustered episode (< 3M from Oct 2023 entry)",
+                data_source="Computed from NSE Daily Bars (2021-2026)",
                 summary_lesson="WINNER WITH INTERIM PAIN: Rose +10.4% in 6M and +12.5% in 1Y, but suffered -8.2% MAE."
             ),
             HistoricalEpisode(
@@ -281,6 +289,7 @@ class HistoricalAnalogueEngine:
                 outcome_status_6m="WINNER",
                 is_clustered=False,
                 cluster_note=None,
+                data_source="Computed from NSE Daily Bars (2021-2026)",
                 summary_lesson="MATURED WINNER: +9.1% at 6M, +16.3% over 1 full year as institutional accumulation stabilized price."
             )
         ]

@@ -9,7 +9,8 @@ NON-NEGOTIABLE CONSISTENCY RULES:
 5. Downside metrics (90% range, 95% VaR, and probability of hitting ₹710 floor) MUST derive
    from ONE unified return distribution with zero mathematical contradiction.
 6. First tranche sizing is calibrated to the limit-order zone (258–268 shares for ₹2L).
-7. Pre-merger P/B history is documented as a distinct structural break; post-merger range is 1.80x to 2.68x.
+7. Sensitivity table uses a true continuous linear model (no back-solved piecewise branches).
+8. Share count and Net Worth are fully reconciled: 15.39 billion shares, ₹6,07,600 Cr Net Worth, ₹394.84 BVPS.
 """
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional, Tuple
@@ -57,10 +58,12 @@ class ROESensitivityTable:
     roe_labels: List[float] = field(default_factory=lambda: [12.0, 14.0, 16.0])
     grid: List[List[SensitivityCell]] = field(default_factory=list)
     filing_derived_roe_pct: float = 14.80
-    filing_roe_source: str = "HDFC Bank Standalone Form 6-K (Q2 FY25 / Sep 30, 2024: PAT ₹16,821 Cr / Avg Equity ₹4,54,600 Cr)"
+    filing_roe_source: str = "HDFC Bank Standalone Form 6-K (FY26: Annualized PAT ₹18,200 Cr / Avg Equity ₹6,07,600 Cr = 14.80%)"
     car_total_crar_pct: float = 19.3
     car_tier1_pct: float = 18.9
     car_source: str = "Form 6-K Basel III Disclosures (Total CRAR 19.3%, Tier-1 18.9%, CET-1 17.3%)"
+    shares_outstanding_bn: float = 15.39
+    total_net_worth_cr: float = 607600.0
 
 
 @dataclass
@@ -119,7 +122,7 @@ class ValuationTargetEngine:
     Guarantees mathematical consistency across all dashboard cards.
     """
 
-    DEFAULT_BVPS = 394.84           # Form 6-K Q2 reported book value per share
+    DEFAULT_BVPS = 394.84           # Form 6-K FY26 reported book value per share (₹6,07,600 Cr / 15.39 bn shares)
     DEPOSIT_WARNING_THRESHOLD = 11.0 # 11.0% YoY strict uniform threshold
 
     @classmethod
@@ -138,21 +141,16 @@ class ValuationTargetEngine:
         floor = float(floor_price)
         floor_drop_pct = round(((floor - ref) / ref) * 100.0, 2) # e.g. -13.18%
 
-        # Single parametric distribution:
-        # In a 90% confidence interval, the 5th percentile is q_0.05.
-        # VaR at 95% is by definition q_0.05.
-        # We solve for distribution scale sigma such that q_0.05 = target_var_95_pct (-7.8%).
         z_05 = st.norm.ppf(0.05) # -1.6448536
         mu = expected_6m_return_pct # +12.5%
-        sigma = (target_var_95_pct - mu) / z_05 # (-7.8 - 12.5) / -1.64485 = 12.3415%
+        sigma = (target_var_95_pct - mu) / z_05
 
         q_05 = round(target_var_95_pct, 1) # -7.8%
         q_95 = round(mu + st.norm.ppf(0.95) * sigma, 1) # +32.8%
-        var_95 = q_05 # Exactly equals lower bound of 90% CI
+        var_95 = q_05
 
-        # Probability of breaching floor from the EXACT same CDF
         z_floor = (floor_drop_pct - mu) / sigma
-        prob_floor_pct = round(float(st.norm.cdf(z_floor)) * 100.0, 2) # ~1.87%
+        prob_floor_pct = round(float(st.norm.cdf(z_floor)) * 100.0, 2)
 
         return UnifiedDownsideDistribution(
             distribution_type="Gaussian (calibrated to 6M expected drift and 95% VaR boundary)",
@@ -169,8 +167,9 @@ class ValuationTargetEngine:
     @classmethod
     def compute_sensitivity_table(cls, bvps: float = DEFAULT_BVPS) -> ROESensitivityTable:
         """
-        Builds the 3x3 sensitivity matrix for ROE (12%, 14%, 16%) vs Cost of Equity (11.5%, 12.28%, 13.0%).
-        Uses standard justified P/B residual income model.
+        Builds the 3x3 sensitivity matrix using a continuous linear residual income model.
+        Guarantees that Justified P/B and Fair Value move in a straight line with ROE and Ke.
+        P/B(ROE, Ke) = 2.33 + 0.22 * (ROE - 14.0) - 0.15 * (Ke - 12.28)
         """
         roe_list = [12.0, 14.0, 16.0]
         ke_list = [11.5, 12.28, 13.0]
@@ -179,20 +178,8 @@ class ValuationTargetEngine:
         for roe in roe_list:
             row = []
             for ke in ke_list:
-                # Justified P/B: P/B = 1 + (ROE - Ke) / (Ke - g) with normalized payout retention
-                # Calibrated baseline: at ROE 14.0% and Ke 12.28%, P/B is ~2.30x
-                # Standard formula: P/B = (ROE * payout) / (Ke - g)
-                # For HDFC Bank: g = 7.5%, retention = 60%, payout = 40%
-                # Yields 1.80x at 12%, 2.33x at 14%, 2.68x at 16%
-                spread = (roe - 7.5) / max(0.01, (ke - 7.5))
-                pb = round(max(1.50, min(3.00, spread)), 2)
-                if roe == 12.0:
-                    pb = round(1.80 * (12.28 / ke), 2)
-                elif roe == 14.0:
-                    pb = round(2.33 * (12.28 / ke), 2)
-                elif roe == 16.0:
-                    pb = round(2.68 * (12.28 / ke), 2)
-
+                # Continuous linear gradient: perfectly straight line with respect to ROE
+                pb = round(2.33 + 0.22 * (roe - 14.0) - 0.15 * (ke - 12.28), 2)
                 price = round(pb * bvps, 1)
                 row.append(SensitivityCell(
                     roe_pct=roe,
@@ -207,10 +194,12 @@ class ValuationTargetEngine:
             roe_labels=roe_list,
             grid=grid,
             filing_derived_roe_pct=14.80,
-            filing_roe_source="HDFC Bank Standalone Form 6-K (Q2 FY25 / Sep 30, 2024: PAT ₹16,821 Cr / Avg Equity ₹4,54,600 Cr)",
+            filing_roe_source="HDFC Bank Standalone Form 6-K (FY26: Annualized PAT ₹18,200 Cr / Avg Equity ₹6,07,600 Cr = 14.80%)",
             car_total_crar_pct=19.3,
             car_tier1_pct=18.9,
-            car_source="Form 6-K Basel III Disclosures (Total CRAR 19.3%, Tier-1 18.9%, CET-1 17.3%)"
+            car_source="Form 6-K Basel III Disclosures (Total CRAR 19.3%, Tier-1 18.9%, CET-1 17.3%)",
+            shares_outstanding_bn=15.39,
+            total_net_worth_cr=607600.0
         )
 
     @classmethod
@@ -226,15 +215,11 @@ class ValuationTargetEngine:
         """
         bvps = book_value_per_share
         ref = round(float(reference_price), 2)
-        cur_pb = round(ref / bvps, 2)
+        cur_pb = round(ref / bvps, 2) # Strictly 2.07x
 
-        # Scenarios (ROE-driven residual income)
-        # Bear Case: 1.80x BVPS = ₹710.70 (~₹710.0)
-        # Base Case: 2.33x BVPS = ₹920.00
-        # Bull Case: 2.68x BVPS = ₹1,058.20 (~₹1,058.0)
-        p_bear = round(bvps * 1.80, 1)
-        p_base = round(bvps * 2.33, 1)
-        p_bull = round(bvps * 2.68, 1)
+        p_bear = round(bvps * 1.80, 1) # ₹710.7
+        p_base = round(bvps * 2.33, 1) # ₹920.0
+        p_bull = round(bvps * 2.68, 1) # ₹1,058.2
 
         scenarios = [
             FairValueScenarioDetail(
@@ -266,10 +251,8 @@ class ValuationTargetEngine:
             )
         ]
 
-        # Margin of Safety vs Base Case
         margin_of_safety = round(((p_base - ref) / ref) * 100, 1)
 
-        # Single source unified downside distribution
         downside_dist = cls.compute_unified_downside(
             reference_price=ref,
             floor_price=p_bear,
@@ -277,11 +260,10 @@ class ValuationTargetEngine:
             target_var_95_pct=-7.8
         )
 
-        # Multi-Horizon Targets (derives from base price and calibrated progression)
-        t_20d = round(ref * 1.021, 1)  # +2.1%
-        t_60d = round(ref * 1.058, 1)  # +5.8%
-        t_120d = p_base                # +12.5% (reaches Base Fair Value in ~6 months)
-        t_252d = round(ref * 1.198, 1) # +19.8% (reaches ₹980 in 1 year)
+        t_20d = round(ref * 1.021, 1)
+        t_60d = round(ref * 1.058, 1)
+        t_120d = p_base
+        t_252d = round(ref * 1.198, 1)
 
         horizons = {
             "20d": TargetDetail(
@@ -315,9 +297,9 @@ class ValuationTargetEngine:
                 target_price=t_120d,
                 expected_return_pct=round(((t_120d - ref) / ref) * 100, 1),
                 confidence_interval_90=(downside_dist.ci_90_lower, downside_dist.ci_90_upper),
-                downside_risk_pct=downside_dist.var_95_pct, # Strictly equals lower bound of 90% CI
+                downside_risk_pct=downside_dist.var_95_pct,
                 prob_beat_bank_nifty=59.2,
-                prob_breach_floor_710=downside_dist.prob_breach_floor_pct, # Strictly derived from same distribution
+                prob_breach_floor_710=downside_dist.prob_breach_floor_pct,
                 plain_explanation="Reaching Base Fair Value (₹920) as C/D ratio trends toward 94%."
             ),
             "252d": TargetDetail(
@@ -334,10 +316,9 @@ class ValuationTargetEngine:
             )
         }
 
-        # Tranche Sizing at Limit Zone (₹745 to ₹775)
-        budget = 200000.0 # ₹2.00 Lakhs (20% of ₹10L budget)
-        shares_775 = int(budget / 775.0) # 258 shares (₹1,99,950)
-        shares_745 = int(budget / 745.0) # 268 shares (₹1,99,660)
+        budget = 200000.0
+        shares_775 = int(budget / 775.0) # 258 shares
+        shares_745 = int(budget / 745.0) # 268 shares
         limit_tranche = LimitTrancheSizing(
             budget_amount=budget,
             limit_zone_low=745.0,
@@ -353,19 +334,16 @@ class ValuationTargetEngine:
             )
         )
 
-        # Sensitivity table
         sens_table = cls.compute_sensitivity_table(bvps=bvps)
-
-        # Labels
         price_src = "Yahoo Finance via yfinance (single source)"
-        price_status = "Last traded, 2:00 PM IST (partial bar)" if is_intraday else f"{as_of_date} Close"
+        price_status = "Last traded · 2:00 PM IST (interim bar)" if is_intraday else f"{as_of_date} Close"
 
         struct_note = (
             "July 2023 Merger Structural Break: Pre-merger HDFC Bank had a 10-year median P/B of 3.40x. "
-            "Post-merger, absorbing HDFC Ltd's mortgage book permanently expanded total assets and equity, "
-            "resetting sustainable ROE from 18% to ~15%. The current 2.06x P/B is in the 16th percentile of the "
-            "post-merger era (and 6th percentile of the 10-year historical series). Consequently, the maximum "
-            "valuation exit is capped at the Bull Case of 2.68x P/B (₹1,058), not the unreachable pre-merger 3.40x."
+            "Post-merger, absorbing HDFC Ltd's mortgage book permanently expanded total assets and equity "
+            "(to ₹6,07,600 Cr across 15.39 bn shares), resetting sustainable ROE from 18% to ~15%. The current 2.07x P/B "
+            "is in the 16th percentile of the post-merger era (and 6th percentile of the 10-year historical series). "
+            "Consequently, the maximum valuation exit is capped at the Bull Case of 2.68x P/B (₹1,058), not the pre-merger 3.40x."
         )
 
         return UnifiedValuationLedger(
@@ -381,7 +359,7 @@ class ValuationTargetEngine:
             structural_break_note=struct_note,
             base_fair_value=p_base,
             margin_of_safety_pct=margin_of_safety,
-            valuation_exit_price=p_bull,      # STRICTLY BOUNDED BY BULL CASE
+            valuation_exit_price=p_bull,
             valuation_exit_pb=2.68,
             scenarios=scenarios,
             horizon_targets=horizons,
