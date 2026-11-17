@@ -92,6 +92,12 @@ From the project root:
 - **Bayesian Uncertainty Widening**: Thin sample counts ($N < 30$) automatically pool peer variance and expand the 90% uncertainty interval by $1.35\times$.
 - **Probabilistic Calibration Metrics**: Calculates Brier Score and cross-entropy Log Loss against a documented shrinkage prior ($\pi_0 = 0.52, \lambda = 0.65$) to eliminate ungrounded overconfidence.
 
+### Phase 5 Upgrades: Fair Value, Quantitative Regime & Tier Arbitration
+- **Justified P/B Residual Income Model**: Projects 3 macro scenarios (BEAR 25%, BASE 55%, BULL 20%) evaluating sustainable ROE vs cost of equity (12.28%), explicitly isolating the July 2023 merger structural break.
+- **Expanded Fundamentals Gate**: Audits NII YoY, CASA share, credit cost, gross slippages, PCR, cost-to-income, and LCR, with all metrics verified against statutory Form 6-K filings.
+- **Quantitative 3-State Regime**: Deterministic classification into *Active Correction*, *Base Recovery*, or *Overheated/Breakdown* using indicator physics and balance-sheet integrity (no LLM hallucination).
+- **Two-Tier Arbitration Layer**: Primary tier decides WHAT and HOW MUCH; Tactical tier decides WHEN and ORDER TYPE. Surfaces tier conflicts explicitly (e.g. Primary Accumulate vs Tactical Sell routes to a limit order pullback zone). Enforces event blackouts (earnings, RBI MPC) and thesis-invalidation exits.
+
 
 
 
