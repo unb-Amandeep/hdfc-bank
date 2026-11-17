@@ -29,11 +29,39 @@ class CapitalAllocator:
     def __init__(self, default_budget: float = 1000000.0):
         self.default_budget = default_budget
 
-    def compute_allocation_plan(self, bottom_score: int, current_price: float, budget: float = None) -> CapitalPlan:
+    def compute_allocation_plan(
+        self,
+        bottom_score: int,
+        current_price: float,
+        budget: float = None,
+        abstention: Optional[Any] = None
+    ) -> CapitalPlan:
         """
         Determines smart tranche deployment policy based on cyclical opportunity score.
+        Blocks deployment to 0% if Abstention Engine flags a safety block.
         """
         total_budget = budget or self.default_budget
+
+        # If Abstention Engine signals ABSTAIN, hard-block all deployment
+        if abstention and getattr(abstention, "should_abstain", False):
+            blocking_str = "; ".join(getattr(abstention, "blocking_reasons", ["System in ABSTAIN state"]))
+            ladder = [
+                {"score_range": "ALL TIERS BLOCKED", "target_pct": 0, "amount": 0, "status": "ABSTAIN: " + blocking_str}
+            ]
+            return CapitalPlan(
+                total_investment_budget=total_budget,
+                bottom_opportunity_score=bottom_score,
+                target_cumulative_allocation_pct=0.0,
+                proposed_deployment_cash=0.0,
+                reserve_capital_cash=total_budget,
+                reserve_capital_pct=100.0,
+                base_fair_value=920.00,
+                bull_case_target=1060.00,
+                bear_case_floor=710.00,
+                margin_of_safety_pct=round(((920.00 - current_price) / current_price) * 100, 1),
+                tranche_ladder_table=ladder,
+                allocation_rationale=f"CAPITAL DEPLOYMENT STRICTLY BLOCKED BY ABSTENTION ENGINE: {blocking_str}"
+            )
 
         # Staged Allocation Ladder Rules
         ladder = [

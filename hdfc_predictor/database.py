@@ -96,6 +96,159 @@ def init_db():
         sentiment_label TEXT
     )
     """)
+
+    # 5. Raw Observations (Point-in-Time Historical Store with Source Attribution)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS raw_observations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        metric TEXT NOT NULL,
+        value REAL NOT NULL,
+        source TEXT NOT NULL,
+        as_of_date TEXT NOT NULL,
+        filing_timestamp TEXT,
+        entity_scope TEXT NOT NULL,
+        revision_no INTEGER DEFAULT 0,
+        fetched_at TEXT NOT NULL,
+        is_verified INTEGER DEFAULT 0
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_obs_metric_date ON raw_observations (metric, entity_scope, as_of_date)")
+
+    # 6. Corporate Actions Table (Splits, Bonuses, Mergers)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS corporate_actions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol TEXT NOT NULL,
+        action_type TEXT NOT NULL,
+        ex_date TEXT NOT NULL,
+        record_date TEXT,
+        ratio_from REAL,
+        ratio_to REAL,
+        split_factor REAL NOT NULL,
+        notes TEXT
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_corp_act_sym_date ON corporate_actions (symbol, ex_date)")
+
+    # 7. Data Quality Audit Log
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS data_quality_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT NOT NULL,
+        check_type TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        status TEXT NOT NULL,
+        details TEXT,
+        severity TEXT NOT NULL
+    )
+    """)
+
+    # Seed Default Corporate Actions for HDFC Bank if empty
+    cursor.execute("SELECT COUNT(*) FROM corporate_actions WHERE symbol = 'HDFCBANK.NS'")
+    if cursor.fetchone()[0] == 0:
+        seed_actions = [
+            ('HDFCBANK.NS', 'SPLIT', '2011-07-14', '2011-07-16', 1.0, 5.0, 5.0, 'Stock split 1:5 (Face Value 10 to 2)'),
+            ('HDFCBANK.NS', 'SPLIT', '2019-09-19', '2019-09-20', 1.0, 2.0, 2.0, 'Stock split 1:2 (Face Value 2 to 1)'),
+            ('HDFCBANK.NS', 'MERGER', '2023-07-01', '2023-07-13', 25.0, 42.0, 1.68, 'HDFC Ltd merger: 42 HDFC Bank shares per 25 HDFC Ltd shares')
+        ]
+        cursor.executemany("""
+        INSERT INTO corporate_actions (symbol, action_type, ex_date, record_date, ratio_from, ratio_to, split_factor, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, seed_actions)
+    
+    conn.commit()
+    conn.close()
+
+
+def log_raw_observation(
+    metric: str,
+    value: float,
+    source: str,
+    as_of_date: str,
+    entity_scope: str = "HDFCBANK_STANDALONE",
+    filing_timestamp: Optional[str] = None,
+    revision_no: int = 0,
+    is_verified: bool = False
+) -> int:
+    """Inserts a point-in-time observation with data lineage metadata."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_str = datetime.now().isoformat()
+    cursor.execute("""
+    INSERT INTO raw_observations (
+        metric, value, source, as_of_date, filing_timestamp,
+        entity_scope, revision_no, fetched_at, is_verified
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        metric, float(value), source, as_of_date, filing_timestamp,
+        entity_scope, revision_no, now_str, 1 if is_verified else 0
+    ))
+    obs_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return obs_id
+
+
+def get_point_in_time_observation(
+    metric: str,
+    entity_scope: str = "HDFCBANK_STANDALONE",
+    as_of_date: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Retrieves the most recent observation known as of a specific date (no look-ahead).
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if as_of_date:
+        cursor.execute("""
+        SELECT * FROM raw_observations
+        WHERE metric = ? AND entity_scope = ? AND as_of_date <= ?
+        ORDER BY as_of_date DESC, revision_no DESC
+        LIMIT 1
+        """, (metric, entity_scope, as_of_date))
+    else:
+        cursor.execute("""
+        SELECT * FROM raw_observations
+        WHERE metric = ? AND entity_scope = ?
+        ORDER BY as_of_date DESC, revision_no DESC
+        LIMIT 1
+        """, (metric, entity_scope))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def log_data_quality(
+    check_type: str,
+    symbol: str,
+    status: str,
+    details: str,
+    severity: str = "INFO"
+) -> int:
+    """Records data quality checks, schema alerts, or outlier rejections."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_str = datetime.now().isoformat()
+    cursor.execute("""
+    INSERT INTO data_quality_log (timestamp, check_type, symbol, status, details, severity)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """, (now_str, check_type, symbol, status, details, severity))
+    log_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return log_id
+
+
+def get_corporate_actions(symbol: str) -> List[Dict[str, Any]]:
+    """Fetches all corporate actions for symbol ordered by date."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT * FROM corporate_actions WHERE symbol = ? ORDER BY ex_date ASC
+    """, (symbol,))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
     
     conn.commit()
     conn.close()

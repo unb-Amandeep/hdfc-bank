@@ -67,6 +67,14 @@ From the project root:
 
 ## 📁 System Architecture
 
+### Phase 1: Point-in-Time Data Foundation & Abstention
+- **Point-in-Time Data Tables**: `raw_observations` (metric lineage, sources, revisions, as-of dates), `corporate_actions` (splits, bonuses, mergers), `data_quality_log`.
+- **Corporate Action Adjustments**: Consistent backwards adjustment across per-share metrics (EPS, BVPS) and price feeds.
+- **ADR Normalization Engine**: Configurable ratio (default 3.0 shares/ADS), USD/INR FX alignment, US/India holiday offset tracking.
+- **Data Quality Gates**: Freshness validation, schema integrity, and raw bar indicator recomputation (cross-checking RSI and 20-SMA distance).
+- **Abstention Engine**: Commands unequivocal `ABSTAIN` on data drift, source conflict (>2.5%), or out-of-distribution regime; strictly blocks capital allocation (0% deployed).
+
+
 ```
 hdfc_predictor/
 ├── config.py           # Configuration, tickers, thresholds, and paths
