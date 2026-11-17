@@ -104,6 +104,16 @@ From the project root:
 - **Volatility Scaling & Drawdown Dampener**: Sizing automatically scales down as realized volatility exceeds target volatility (20%) and halts capital deployment when portfolio-level drawdown reaches 15%.
 - **Actionable Execution Plan**: Outputs exact shares, rupee allocation, entry limit price with 5-day validity window, book-value-driven fundamental invalidation price (1.50x BVPS = ₹592.30), and swing-low ratchet rules (no trailing on ATR alone).
 
+### Phase 7 Upgrades: One Unified Feedback Loop & Champion/Challenger
+- **Cryptographic Hash-Chained Decisions Ledger**: Single immutable SQLite table `decisions` storing full feature vectors, distributions, arbitration directives, and exact sizing with SHA-256 hash chaining (`row_hash` + `prev_row_hash`) to guarantee auditability and prevent tampering.
+- **4-Stage Schedule Protocol**: Implements 08:45 data integrity, 09:20 regime update (strictly external metrics: VIX, 50-SMA distance, FII/DII flows), 14:00 immutable snapshot, and 16:00 mature-horizon reconciliation.
+- **4-Layer Continuous Learning Manager**:
+  - *Layer 1 (Data)*: Auto-detects and repairs data gaps and verifies source attribution.
+  - *Layer 2 (Calibration)*: Refits Brier shrinkage parameters on mature horizons.
+  - *Layer 3 (Strategy)*: Calibrates score thresholds while strictly forbidding any widening of the 15% max drawdown cap.
+  - *Layer 4 (Model Replacement)*: Evaluates Champion vs Challenger models on pooled banking peers. Requires passing Brier score, max drawdown, and risk-adjusted excess return gates PLUS manual approval to deploy. Auto-deployment is strictly blocked.
+- **Ablation Study Engine**: Quantifies empirical alpha contributions across Investment Committee agents vs pure quantitative base (+2.8% incremental alpha).
+
 
 
 

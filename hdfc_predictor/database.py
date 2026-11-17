@@ -4,6 +4,7 @@ Stores daily predictions, actual verified market outcomes, and learning history.
 """
 import sqlite3
 import json
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -142,6 +143,32 @@ def init_db():
         severity TEXT NOT NULL
     )
     """)
+
+    # 8. Unified Immutable Decisions Table with Cryptographic Hash-Chain
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS decisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT NOT NULL,
+        data_vintage TEXT NOT NULL,
+        model_version TEXT NOT NULL,
+        threshold_version TEXT NOT NULL,
+        feature_vector_json TEXT NOT NULL,
+        prompts_used_json TEXT,
+        forecast_distributions_json TEXT NOT NULL,
+        regime_probabilities_json TEXT NOT NULL,
+        tactical_levels_json TEXT NOT NULL,
+        tranche_pct REAL NOT NULL,
+        exact_shares INTEGER NOT NULL,
+        exact_cash_amount REAL NOT NULL,
+        abstain_flag INTEGER NOT NULL,
+        abstain_reasons_json TEXT,
+        decision_action TEXT NOT NULL,
+        code_commit_hash TEXT NOT NULL,
+        prev_row_hash TEXT NOT NULL,
+        row_hash TEXT NOT NULL
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_decisions_ts ON decisions (timestamp)")
 
     # Seed Default Corporate Actions for HDFC Bank if empty
     cursor.execute("SELECT COUNT(*) FROM corporate_actions WHERE symbol = 'HDFCBANK.NS'")
@@ -365,3 +392,154 @@ def get_learning_progress() -> List[Dict[str, Any]]:
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
+
+
+GENESIS_HASH = "0" * 64
+
+
+def calculate_decision_row_hash(payload: Dict[str, Any], prev_hash: str) -> str:
+    """Calculates deterministic SHA-256 cryptographic hash over decision fields."""
+    serialized = (
+        f"{prev_hash}|"
+        f"{payload.get('timestamp')}|"
+        f"{payload.get('data_vintage')}|"
+        f"{payload.get('model_version')}|"
+        f"{payload.get('threshold_version')}|"
+        f"{payload.get('feature_vector_json')}|"
+        f"{payload.get('forecast_distributions_json')}|"
+        f"{payload.get('regime_probabilities_json')}|"
+        f"{payload.get('tactical_levels_json')}|"
+        f"{payload.get('tranche_pct')}|"
+        f"{payload.get('exact_shares')}|"
+        f"{payload.get('exact_cash_amount')}|"
+        f"{payload.get('abstain_flag')}|"
+        f"{payload.get('decision_action')}|"
+        f"{payload.get('code_commit_hash')}"
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def insert_immutable_decision(
+    timestamp: str,
+    data_vintage: str,
+    model_version: str,
+    threshold_version: str,
+    feature_vector: Dict[str, Any],
+    forecast_distributions: Dict[str, Any],
+    regime_probabilities: Dict[str, Any],
+    tactical_levels: Dict[str, Any],
+    tranche_pct: float,
+    exact_shares: int,
+    exact_cash_amount: float,
+    abstain_flag: int,
+    decision_action: str,
+    code_commit_hash: str,
+    prompts_used: Optional[List[str]] = None,
+    abstain_reasons: Optional[List[str]] = None
+) -> str:
+    """
+    Inserts a row into the immutable decisions ledger with cryptographic SHA-256 hash chaining.
+    """
+    init_db()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get the hash of the latest row
+    cursor.execute("SELECT row_hash FROM decisions ORDER BY id DESC LIMIT 1")
+    row = cursor.fetchone()
+    prev_row_hash = row["row_hash"] if row else GENESIS_HASH
+
+    feat_json = json.dumps(feature_vector, sort_keys=True)
+    dist_json = json.dumps(forecast_distributions, sort_keys=True)
+    reg_json = json.dumps(regime_probabilities, sort_keys=True)
+    tact_json = json.dumps(tactical_levels, sort_keys=True)
+    prompts_json = json.dumps(prompts_used or [], sort_keys=True)
+    reasons_json = json.dumps(abstain_reasons or [], sort_keys=True)
+
+    payload = {
+        "timestamp": timestamp,
+        "data_vintage": data_vintage,
+        "model_version": model_version,
+        "threshold_version": threshold_version,
+        "feature_vector_json": feat_json,
+        "forecast_distributions_json": dist_json,
+        "regime_probabilities_json": reg_json,
+        "tactical_levels_json": tact_json,
+        "tranche_pct": tranche_pct,
+        "exact_shares": exact_shares,
+        "exact_cash_amount": exact_cash_amount,
+        "abstain_flag": abstain_flag,
+        "decision_action": decision_action,
+        "code_commit_hash": code_commit_hash
+    }
+
+    current_row_hash = calculate_decision_row_hash(payload, prev_row_hash)
+
+    cursor.execute("""
+    INSERT INTO decisions (
+        timestamp, data_vintage, model_version, threshold_version,
+        feature_vector_json, prompts_used_json, forecast_distributions_json,
+        regime_probabilities_json, tactical_levels_json, tranche_pct,
+        exact_shares, exact_cash_amount, abstain_flag, abstain_reasons_json,
+        decision_action, code_commit_hash, prev_row_hash, row_hash
+    ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    )
+    """, (
+        timestamp, data_vintage, model_version, threshold_version,
+        feat_json, prompts_json, dist_json,
+        reg_json, tact_json, tranche_pct,
+        exact_shares, exact_cash_amount, abstain_flag, reasons_json,
+        decision_action, code_commit_hash, prev_row_hash, current_row_hash
+    ))
+    conn.commit()
+    conn.close()
+    return current_row_hash
+
+
+def verify_decision_chain_integrity() -> Tuple[bool, List[str]]:
+    """
+    Verifies cryptographic hash-chain integrity across all historical decisions.
+    Returns (is_valid, list_of_errors).
+    """
+    init_db()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM decisions ORDER BY id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return True, ["No decisions recorded yet; empty chain is valid."]
+
+    expected_prev_hash = GENESIS_HASH
+    errors = []
+
+    for idx, r in enumerate(rows):
+        row_dict = dict(r)
+        actual_prev = row_dict["prev_row_hash"]
+        actual_hash = row_dict["row_hash"]
+
+        if actual_prev != expected_prev_hash:
+            errors.append(f"Row ID {row_dict['id']}: prev_row_hash mismatch! Expected {expected_prev_hash[:12]}..., got {actual_prev[:12]}...")
+
+        # Re-compute hash
+        recalc_hash = calculate_decision_row_hash(row_dict, actual_prev)
+        if recalc_hash != actual_hash:
+            errors.append(f"Row ID {row_dict['id']}: row_hash tampered or mismatch! Recalculated {recalc_hash[:12]}... != Stored {actual_hash[:12]}...")
+
+        expected_prev_hash = actual_hash
+
+    return (len(errors) == 0), errors
+
+
+def get_latest_decision() -> Optional[Dict[str, Any]]:
+    """Retrieves the most recent decision record."""
+    init_db()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM decisions ORDER BY id DESC LIMIT 1")
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
