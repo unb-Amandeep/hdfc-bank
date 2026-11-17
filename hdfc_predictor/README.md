@@ -86,6 +86,13 @@ From the project root:
 - **Purging & Embargo**: Purges overlapping forward labels between train/test splits and computes effective degrees of freedom ($N_{\text{eff}} = N/\text{Horizon}$) rather than inflated raw row counts.
 - **Weight Sensitivity (+/-20%)**: Audits score pillar stability against weight perturbations via Spearman rank correlation ($\rho \ge 0.92$).
 
+### Phase 4: Calibration & Forward Return Distributions
+- **Multi-Horizon Return Distributions**: Generates parametric and empirical distributions for 5d, 20d, 60d, 120d, and 252d horizons.
+- **Tail-Risk & Alpha Probabilities**: Explicitly outputs Downside Probability $P(\text{Return} < 0)$ and Probability of Beating Bank Nifty.
+- **Bayesian Uncertainty Widening**: Thin sample counts ($N < 30$) automatically pool peer variance and expand the 90% uncertainty interval by $1.35\times$.
+- **Probabilistic Calibration Metrics**: Calculates Brier Score and cross-entropy Log Loss against a documented shrinkage prior ($\pi_0 = 0.52, \lambda = 0.65$) to eliminate ungrounded overconfidence.
+
+
 
 
 
