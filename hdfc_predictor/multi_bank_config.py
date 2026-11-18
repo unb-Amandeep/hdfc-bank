@@ -49,17 +49,17 @@ BANK_PEER_DATABASE: Dict[str, BankFundamentalSpec] = {
         total_net_worth_cr=607600.0,
         total_shares_bn=15.39,
         book_value_per_share=394.80,
-        current_reference_price=817.80,
-        current_pb=2.07,
-        own_5y_median_pb=2.65,
-        own_5y_pb_percentile=16.0,
+        current_reference_price=814.95,
+        current_pb=2.06,
+        own_5y_median_pb=2.06,
+        own_5y_pb_percentile=51.0,
         trailing_annualized_pat_cr=78040.0,
         trailing_roe_pct=12.84,
         car_total_pct=18.9,
         gross_npa_pct=1.11,
         net_npa_pct=0.37,
         cd_ratio_pct=96.0,
-        status_label="WAIT (Sprint Pullback Pending)"
+        status_label="WAIT"
     ),
     "ICICIBANK.NS": BankFundamentalSpec(
         symbol="ICICIBANK.NS",

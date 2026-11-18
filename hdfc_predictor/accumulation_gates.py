@@ -181,22 +181,24 @@ class AccumulationGatesEngine:
         Checks if the bank is cheaper than its recent post-merger history and evaluates P/B relative to ROE.
         """
         current_pb = current_price / bvps
-        # Post-merger 25th percentile is 2.30x P/B
+        # Post-merger median is ~2.06x P/B, 25th percentile is ~1.88x (₹742)
         is_cheaper_than_recent_history = current_pb <= 2.30
 
         # ROE-adjusted check: P/B divided by trailing ROE
-        # When ROE is 11.1%, a 2.07x P/B gives a PB/ROE PEG ratio of ~0.186
         pb_to_roe_ratio = round(current_pb / (trailing_roe_pct / 100.0), 1)
         # Healthy banking hurdle: PB/ROE < 22.0
         roe_adjusted_pass = pb_to_roe_ratio <= 22.0
 
         passed = is_cheaper_than_recent_history and roe_adjusted_pass
 
+        pb_percentile = ValuationTargetEngine.compute_pb_percentile(current_pb)
+
         evidence = {
             "current_price": round(current_price, 2),
             "book_value_per_share": round(bvps, 2),
             "current_pb": round(current_pb, 2),
-            "post_merger_25th_percentile_pb": 2.30,
+            "pb_percentile": pb_percentile,
+            "post_merger_median_pb": 2.06,
             "trailing_roe_pct": trailing_roe_pct,
             "pb_to_roe_multiple": pb_to_roe_ratio
         }
@@ -208,7 +210,7 @@ class AccumulationGatesEngine:
                 status="PASS",
                 passed=True,
                 evidence_metrics=evidence,
-                plain_rationale=f"Cheaper than its recent history: trades at {current_pb:.2f}x P/B (16th post-merger percentile) with attractive ROE-multiple ({pb_to_roe_ratio}x).",
+                plain_rationale=f"Fair relative to recent history: trades at {current_pb:.2f}x P/B ({pb_percentile:.0f}th post-merger percentile; historical median). Staged pullback band triggers at lower quartile (25th–32nd percentile).",
                 action_directive="PROCEED"
             )
         else:
@@ -218,7 +220,7 @@ class AccumulationGatesEngine:
                 status="WAIT",
                 passed=False,
                 evidence_metrics=evidence,
-                plain_rationale=f"Valuation is stretched relative to recent history (P/B {current_pb:.2f}x > 2.30x).",
+                plain_rationale=f"Valuation is stretched relative to recent history (P/B {current_pb:.2f}x > 2.30x; {pb_percentile:.0f}th percentile).",
                 action_directive="WAIT_FOR_VALUATION_DISCOUNT"
             )
 

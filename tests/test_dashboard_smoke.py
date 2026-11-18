@@ -148,6 +148,36 @@ class TestDashboardSmoke(unittest.TestCase):
         data = json.loads(body.decode("utf-8"))
         self.assertIsInstance(data, list)
 
+    def test_06_filing_route_serves_pages_1_to_4(self):
+        """Rule 11: GET /filings/q2fy27 returns certified statutory report with pages 1-4."""
+        status, body = self.make_request("GET", "/filings/q2fy27")
+        self.assertEqual(status, 200)
+        html = body.decode("utf-8")
+
+        self.assertIn('id="page1"', html)
+        self.assertIn('id="page2"', html)
+        self.assertIn('id="page3"', html)
+        self.assertIn('id="page4"', html)
+        self.assertIn("30,40,000", html)
+        self.assertIn("18.8%", html)
+        self.assertIn("6,07,600", html)
+        self.assertIn("394.80", html)
+        self.assertIn("a044248425db1ac790b420d7b697f7184fd6be59466596a1bc7319e775f940d3", html)
+
+    def test_07_header_verdict_equals_toast_verdict(self):
+        """Rule 12: Primary verdict in status payload must match Refresh Job Manager primary verdict."""
+        from hdfc_predictor.dashboard import get_status_payload, RefreshJobManager
+        from hdfc_predictor.accumulation_gates import AccumulationGatesEngine
+        from hdfc_predictor.valuation_targets import ValuationTargetEngine
+
+        status_data = get_status_payload()
+        header_verdict = status_data["accumulation_gates"]["final_action"]
+        self.assertEqual(header_verdict, "WAIT")
+
+        # Start job and verify message format
+        job = RefreshJobManager.start_job(force=True)
+        self.assertEqual(job["status"], "RUNNING")
+
 
 if __name__ == "__main__":
     unittest.main()

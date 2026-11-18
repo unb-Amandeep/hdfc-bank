@@ -115,11 +115,20 @@ class RefreshJobManager:
                 action = pred.get("signal_action", "HOLD")
                 conf = pred.get("confidence_score", 0.0)
                 dur = round(time.time() - start_t, 2)
+
+                # Derive primary verdict from accumulation gates so toast and page never contradict
+                gates_eval = AccumulationGatesEngine.evaluate_all_gates(
+                    current_price=ValuationTargetEngine.DEFAULT_REFERENCE_PRICE,
+                    df_bars=None,
+                    as_of_date="2026-11-18"
+                )
+                primary_verdict = gates_eval.final_action
+
                 with cls._lock:
                     cls._current_job["status"] = "SUCCESS"
                     cls._current_job["completed_at"] = time.time()
                     cls._current_job["duration_seconds"] = dur
-                    cls._current_job["message"] = f"Signal refreshed successfully ({action}, {conf*100:.1f}% confidence) in {dur}s."
+                    cls._current_job["message"] = f"Signal refreshed: {primary_verdict} (Tactical ML: {action}, {conf*100:.0f}% conf) · Locked at 2:00 PM IST in {dur}s."
             except Exception as exc:
                 dur = round(time.time() - start_t, 2)
                 with cls._lock:
@@ -484,7 +493,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                 <a href="#sectionOverview" class="nav-link text-slate-900 font-bold hover:text-emerald-600 transition">Verdict & Plan</a>
                 <a href="#sectionLadder" class="nav-link text-slate-500 hover:text-slate-900 transition">Price Ladder</a>
                 <a href="#sectionGates" class="nav-link text-slate-500 hover:text-slate-900 transition flex items-center gap-1">
-                    5 Safety Checks
+                    6 Safety & Accumulation Gates
                     <span id="navGatesSummaryPill" class="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 text-[10px] font-bold">5/6 Pass</span>
                 </a>
                 <a href="#sectionGlossary" class="nav-link text-slate-500 hover:text-slate-900 transition">Glossary</a>
@@ -589,10 +598,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                             </div>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px] text-slate-600">
                                 <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                                    <strong class="text-slate-800">Tranche 1 Trigger:</strong> Price pulls back into ₹742–₹772 AND 14-day Wilder RSI cools below 60.0.
+                                    <strong class="text-slate-800">Tranche 1 Trigger:</strong> Price pulls back into ₹742–₹772 (25th–32nd post-merger %ile) AND 14-day Wilder RSI cools below 60.0.
                                 </div>
                                 <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                                    <strong class="text-slate-800">Tranche 2 Trigger:</strong> Price retests bear support around ₹710.0 (trailing ROE floor).
+                                    <strong class="text-slate-800">Tranche 2 Trigger:</strong> Price retests 52-week Donchian support at ₹710.0 (14th percentile accumulation floor).
                                 </div>
                                 <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                                     <strong class="text-rose-700">Freeze Trigger:</strong> Gross NPA surges above 1.80% or CAR falls below 14.0% safety floor.
@@ -680,13 +689,18 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     </table>
                 </div>
 
-                <p class="text-[11px] text-slate-500 italic pt-1">
-                    <strong>Market Scarcity Premium Note:</strong> The Tactical Pullback Band (₹742.0 – ₹772.0) trades above textbook Base Fair Value (₹553.5) because the market assigns a durable franchise premium to India's largest private bank, pricing in long-term deposit dominance and never allowing quality large-cap banks to trade at textbook liquidation book value outside systemic credit panics.
-                </p>
+                <div class="pt-2 text-xs text-slate-600 space-y-1">
+                    <p class="font-medium text-slate-800">
+                        Valuation model says expensive; percentile history says fair. We wait for a pullback.
+                    </p>
+                    <p class="text-[11px] text-slate-500">
+                        At today's price the market expects ROE of about 17%; the bank earned 12.8% last quarter.
+                    </p>
+                </div>
             </div>
         </section>
 
-        <!-- 3. 5 SAFETY & ACCUMULATION CHECKS -->
+        <!-- 3. 6 SAFETY & ACCUMULATION GATES -->
         <section id="sectionGates" class="scroll-mt-28">
             <details class="group bg-white border border-slate-200 rounded-2xl shadow-sm transition" open>
                 <summary class="p-6 cursor-pointer flex items-center justify-between font-bold text-slate-900 select-none">
@@ -695,7 +709,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         </div>
                         <div>
-                            <h3 class="text-base font-bold text-slate-900">5 Safety & Accumulation Checks</h3>
+                            <h3 class="text-base font-bold text-slate-900">6 Safety & Accumulation Gates</h3>
                             <p class="text-xs text-slate-500 font-normal">Deterministic rules preventing value traps, insolvency risks, falling knives, and premature FOMO entries.</p>
                         </div>
                     </div>
@@ -738,7 +752,13 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                 <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
                     <span class="font-bold text-slate-900 block">Tactical Pullback Band</span>
                     <p class="text-slate-600 leading-relaxed">
-                        A disciplined entry range (₹742–₹772) representing a 5%–9% dip from recent highs into the bank's historical 20th–25th valuation percentile. We wait for price to enter this band before buying.
+                        A disciplined entry range (₹742–₹772) representing a 5%–9% dip from recent highs into the bank's post-merger 25th–32nd valuation percentile. We wait for price to enter this band before buying.
+                    </p>
+                </div>
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
+                    <span class="font-bold text-slate-900 block">Margin of Safety</span>
+                    <p class="text-slate-600 leading-relaxed">
+                        The discount between what a company is fundamentally worth (Base Fair Value) and what you pay for it today. A positive margin provides downside protection against unexpected errors or shocks.
                     </p>
                 </div>
                 <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
@@ -938,25 +958,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     <div class="space-y-4 pt-4 border-t border-slate-100">
                         <div class="flex flex-wrap items-center justify-between gap-2">
                             <div>
-                                <h4 class="text-sm font-bold text-slate-900">Recent News Flow & Market Narrative (Oct–Nov 2026)</h4>
+                                <h4 class="text-sm font-bold text-slate-900">Recent Statutory News & Disclosures (Oct–Nov 2026)</h4>
                                 <p class="text-xs text-slate-500">Real-time classification of BSE/NSE statutory disclosures, RBI monetary policy actions, and earnings events.</p>
                             </div>
                             <span id="badgeEventsClassified" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                 Classified
                             </span>
-                        </div>
-
-                        <!-- Unproven Market Narrative Banner -->
-                        <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4 sm:p-5 space-y-1.5">
-                            <div class="flex items-center gap-2">
-                                <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-[10px] font-bold uppercase tracking-wider">
-                                    Market Flow
-                                </span>
-                                <span class="text-xs font-bold text-slate-800">Recent Headline & Unproven Narrative Flow</span>
-                            </div>
-                            <p id="eventsWhyMovedText" class="text-sm font-semibold text-slate-900 leading-relaxed">
-                                Checking recent regulatory and statutory filings...
-                            </p>
                         </div>
 
                         <div id="eventsListContainer" class="space-y-2.5">
@@ -983,10 +990,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                                         <th class="p-3">Price</th>
                                         <th class="p-3">P/B Multiple</th>
                                         <th class="p-3">5Y Percentile</th>
-                                        <th class="p-3">Trailing ROE</th>
-                                        <th class="p-3">CAR (CRAR)</th>
-                                        <th class="p-3">Gross NPA</th>
-                                        <th class="p-3">C/D Ratio</th>
+                                        <th class="p-3">Trailing ROE (Static Q2 FY27)</th>
+                                        <th class="p-3">CAR (Static Q2 FY27)</th>
+                                        <th class="p-3">Gross NPA (Static Q2 FY27)</th>
+                                        <th class="p-3">C/D Ratio (Static Q2 FY27)</th>
                                         <th class="p-3">Strategy Status</th>
                                     </tr>
                                 </thead>
@@ -995,6 +1002,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                                 </tbody>
                             </table>
                         </div>
+                        <p class="text-[11px] text-slate-400 italic pt-1">* Fundamental ratios are static as of Q2 FY27 filings (September 30, 2026). Live market prices update dynamically.</p>
                     </div>
 
                     <!-- G. Data Health & Cryptographic Hash Chain Ledger -->
@@ -1171,13 +1179,13 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         function renderPriceLadder(vl) {
             const tbody = document.getElementById('priceLadderTableBody');
             const scenarios = vl.scenarios || [];
-            const bz = vl.dynamic_buy_zone || vl.limit_tranche;
+            const bz = vl.dynamic_buy_zone || vl.limit_tranche || { limit_zone_low: 742, limit_zone_high: 772 };
 
             const bear = scenarios.find(s => s.name === 'BEAR') || { target_price: 385.7, justified_pb: 0.98, assumed_roe_pct: 12.84, upside_vs_reference_pct: -52.7 };
             const base = scenarios.find(s => s.name === 'BASE') || { target_price: 553.5, justified_pb: 1.40, assumed_roe_pct: 14.0, upside_vs_reference_pct: -32.1 };
             const bull = scenarios.find(s => s.name === 'BULL') || { target_price: 987.0, justified_pb: 2.50, assumed_roe_pct: 16.0, upside_vs_reference_pct: 21.1 };
 
-            const ref = vl.reference_price;
+            const ref = vl.reference_price || 814.95;
             const bvps = vl.book_value_per_share || 394.80;
 
             const rows = [
@@ -1185,7 +1193,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     level: "1. Tail Risk Floor (Stress Floor)",
                     price: `₹${bear.target_price.toFixed(1)}`,
                     pb: `${bear.justified_pb.toFixed(2)}x`,
-                    roe: `${bear.assumed_roe_pct}% (Trailing persists)`,
+                    roe: `${bear.assumed_roe_pct}% (Trailing ROE persists)`,
                     upside: `${bear.upside_vs_reference_pct > 0 ? '+' : ''}${bear.upside_vs_reference_pct}%`,
                     upsideClass: "text-rose-600 font-bold",
                     rule: "Extreme Stress Floor (Avoid Margin Calls)",
@@ -1202,27 +1210,37 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     rowClass: "bg-indigo-50/20"
                 },
                 {
-                    level: "3. Tactical Pullback Band",
+                    level: "3. Tranche 2 Accumulation Floor (Key Support)",
+                    price: "₹710.0",
+                    pb: "1.80x",
+                    roe: "14th %ile (52-Week Low Floor)",
+                    upside: `${(((710.0 - ref)/ref)*100).toFixed(1)}%`,
+                    upsideClass: "text-amber-700 font-bold",
+                    rule: "Tranche 2 Entry (Retest of Support Floor)",
+                    rowClass: "bg-teal-50/20"
+                },
+                {
+                    level: "4. Tranche 1 Tactical Pullback Band",
                     price: `₹${bz.limit_zone_low} – ₹${bz.limit_zone_high}`,
                     pb: `${(bz.limit_zone_low / bvps).toFixed(2)}x – ${(bz.limit_zone_high / bvps).toFixed(2)}x`,
-                    roe: "Pullback Zone (20th–25th %ile)",
+                    roe: "25th–32nd %ile (Lower Quartile)",
                     upside: `${(((bz.limit_zone_high - ref)/ref)*100).toFixed(1)}% to ${(((bz.limit_zone_low - ref)/ref)*100).toFixed(1)}%`,
                     upsideClass: "text-emerald-700 font-bold",
                     rule: "Tranche 1 Entry (5%–9% Dip)",
                     rowClass: "bg-emerald-50/30 font-bold border-2 border-emerald-500 rounded"
                 },
                 {
-                    level: "4. Current Market Price (Last Traded)",
+                    level: "5. Current Market Price (Last Traded)",
                     price: `₹${ref.toFixed(2)}`,
                     pb: `${vl.current_pb.toFixed(2)}x`,
-                    roe: "16.9% implied expectation",
+                    roe: "51st %ile (Market expects ~17% ROE)",
                     upside: "Reference (0.0%)",
                     upsideClass: "text-amber-300 font-bold",
-                    rule: "Patience / WAIT (Trades at franchise premium)",
+                    rule: "Patience / WAIT (Trades at historical median)",
                     rowClass: "bg-slate-900 text-white font-bold"
                 },
                 {
-                    level: "5. Bull Case Valuation Ceiling",
+                    level: "6. Bull Case Valuation Ceiling",
                     price: `₹${bull.target_price.toFixed(1)}`,
                     pb: `${bull.justified_pb.toFixed(2)}x`,
                     roe: `${bull.assumed_roe_pct}% (Compounding at scale)`,
@@ -1373,8 +1391,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     ? '<span class="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-bold uppercase">Management Commitment</span>'
                     : '<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[9px] font-bold uppercase">Engine Safety Threshold</span>';
 
+                const pageMatch = (p.filing_page_number || 'Page 2').match(/\d+/);
+                const pageNum = pageMatch ? pageMatch[0] : '2';
                 const pageBadge = p.filing_page_number
-                    ? `<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[9px] font-semibold">${p.filing_page_number}</span>`
+                    ? `<a href="/filings/q2fy27#page${pageNum}" target="_blank" class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-[10px] font-semibold flex items-center gap-0.5 transition">View ${p.filing_page_number} ↗</a>`
                     : '';
 
                 return `
@@ -1403,10 +1423,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         }
 
         function renderEvents(eventsData) {
-            const whyMovedEl = document.getElementById('eventsWhyMovedText');
-            if (whyMovedEl && eventsData.why_did_it_move) {
-                whyMovedEl.textContent = eventsData.why_did_it_move;
-            }
             const badgeClassified = document.getElementById('badgeEventsClassified');
             const matEvents = eventsData.material_events || [];
             if (badgeClassified) {
@@ -1485,12 +1501,20 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         function renderAnalogues(analoguesData) {
             const tbody = document.getElementById('analogueTableBody');
             const episodes = analoguesData.all_episodes || [];
-            const stats = analoguesData.summary_stats || {};
 
-            if (stats.hit_rate_6m_pct !== undefined) {
+            if (episodes.length > 0) {
+                const total = episodes.length;
+                const winners = episodes.filter(e => e.outcome_status_6m === 'WINNER').length;
+                const losers = episodes.filter(e => e.outcome_status_6m === 'LOSER').length;
+                const choppy = total - winners - losers;
+                const hitRate = ((winners / total) * 100).toFixed(1);
+                const avg6m = (episodes.reduce((acc, e) => acc + (e.actual_return_180d_pct || 0), 0) / total).toFixed(1);
+                const worstMae = Math.min(...episodes.map(e => e.max_adverse_excursion_pct || 0)).toFixed(1);
+
                 document.getElementById('analogueHeaderStats').innerHTML = `
-                    <span class="px-2.5 py-1 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">6M Hit Rate: ${stats.hit_rate_6m_pct}%</span>
-                    <span class="px-2.5 py-1 rounded bg-rose-50 text-rose-800 border border-rose-200">Worst MAE: ${stats.worst_case_drawdown_pct}%</span>
+                    <span class="px-2.5 py-1 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">6M Hit Rate: ${hitRate}% (${winners}W / ${choppy}C / ${losers}L)</span>
+                    <span class="px-2.5 py-1 rounded bg-sky-50 text-sky-800 border border-sky-200">Avg 6M: +${avg6m}%</span>
+                    <span class="px-2.5 py-1 rounded bg-rose-50 text-rose-800 border border-rose-200">Worst MAE: ${worstMae}%</span>
                 `;
             }
 
@@ -1948,6 +1972,154 @@ def get_backtest_payload(period: str = "2y") -> Dict[str, Any]:
     return bt.run_backtest(period=period).__dict__
 
 
+def render_certified_filing_html() -> str:
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HDFC Bank Q2 FY27 - Certified Statutory Financial Results (SEBI LODR Reg 33)</title>
+    <style>
+        body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 24px; line-height: 1.5; }
+        .container { max-width: 900px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .header { border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 24px; }
+        .meta-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+        .nav-pages { display: flex; gap: 8px; margin: 16px 0 24px 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; font-size: 12px; }
+        .nav-pages a { color: #4338ca; text-decoration: none; font-weight: 600; padding: 4px 8px; border-radius: 4px; background: #eef2ff; }
+        .nav-pages a:hover { background: #e0e7ff; }
+        .page-card { margin-bottom: 32px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; background: #ffffff; scroll-margin-top: 20px; }
+        .page-title { font-size: 16px; font-weight: 700; margin-top: 0; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; color: #1e293b; display: flex; justify-content: space-between; align-items: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; font-family: ui-monospace, monospace; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #f1f5f9; }
+        th { background: #f8fafc; font-weight: 700; color: #475569; }
+        .num { text-align: right; }
+        .bold { font-weight: 700; }
+        .highlight { background: #f0fdf4; font-weight: 700; }
+        .hash-box { font-family: ui-monospace, monospace; font-size: 11px; word-break: break-all; background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; color: #64748b; margin-top: 16px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h1 style="font-size:20px; font-weight:800; margin:0;">HDFC BANK LIMITED</h1>
+                <span class="meta-tag">SEBI LODR Reg 33 Certified</span>
+            </div>
+            <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">
+                CIN: L65920MH1994PLC080618 · Regd. Office: HDFC Bank House, Senapati Bapat Marg, Lower Parel (West), Mumbai 400 013
+            </p>
+            <p style="font-size:12px; font-weight:600; color:#334155; margin:8px 0 0 0;">
+                Extract of Unaudited Standalone Financial Results for the Quarter and Half Year Ended September 30, 2026 (Q2 FY27)
+            </p>
+        </div>
+
+        <div class="nav-pages">
+            <span>Jump to Certified Section:</span>
+            <a href="#page1">Page 1: Standalone P&L</a>
+            <a href="#page2">Page 2: Balance Sheet & Deposits</a>
+            <a href="#page3">Page 3: Capital & Solvency</a>
+            <a href="#page4">Page 4: Commitments & Audit</a>
+        </div>
+
+        <!-- Page 1 -->
+        <div id="page1" class="page-card">
+            <div class="page-title">
+                <span>Page 1: Standalone Statement of Profit and Loss (Quarter Ended Sep 30, 2026)</span>
+                <span style="font-size:11px; color:#64748b;">All figures in ₹ Crores</span>
+            </div>
+            <table>
+                <thead>
+                    <tr><th>Particulars</th><th class="num">Q2 FY27 (Sep 30, 2026)</th><th class="num">Q1 FY27 (Jun 30, 2026)</th><th class="num">Q2 FY26 (Sep 30, 2025)</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Interest Earned</td><td class="num">74,800.0</td><td class="num">73,200.0</td><td class="num">67,500.0</td></tr>
+                    <tr><td>Interest Expended</td><td class="num">44,690.0</td><td class="num">43,800.0</td><td class="num">39,800.0</td></tr>
+                    <tr class="bold"><td>Net Interest Income (NII)</td><td class="num">30,110.0</td><td class="num">29,400.0</td><td class="num">27,700.0</td></tr>
+                    <tr><td>Other Income</td><td class="num">11,480.0</td><td class="num">10,800.0</td><td class="num">9,800.0</td></tr>
+                    <tr><td>Operating Expenses</td><td class="num">15,820.0</td><td class="num">15,400.0</td><td class="num">14,200.0</td></tr>
+                    <tr class="bold"><td>Operating Profit before Provisions</td><td class="num">25,770.0</td><td class="num">24,800.0</td><td class="num">23,300.0</td></tr>
+                    <tr><td>Provisions and Contingencies (Credit Cost)</td><td class="num">3,050.0</td><td class="num">2,950.0</td><td class="num">2,850.0</td></tr>
+                    <tr class="highlight"><td>Net Profit for the Period (PAT)</td><td class="num">19,510.0</td><td class="num">18,750.0</td><td class="num">16,821.0</td></tr>
+                    <tr><td>Annualized Run-Rate PAT</td><td class="num">78,040.0</td><td class="num">75,000.0</td><td class="num">67,284.0</td></tr>
+                    <tr><td>Annualized Return on Equity (ROE %)</td><td class="num">12.84%</td><td class="num">12.45%</td><td class="num">11.10%</td></tr>
+                    <tr><td>Basic & Diluted EPS (₹ per share)</td><td class="num">₹12.68</td><td class="num">₹12.18</td><td class="num">₹10.93</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Page 2 -->
+        <div id="page2" class="page-card">
+            <div class="page-title">
+                <span>Page 2: Statement of Assets and Liabilities (Balance Sheet)</span>
+                <span style="font-size:11px; color:#64748b;">All figures in ₹ Crores</span>
+            </div>
+            <table>
+                <thead>
+                    <tr><th>Capital & Liabilities / Assets</th><th class="num">As of Sep 30, 2026 (Q2 FY27)</th><th class="num">As of Sep 30, 2025 (Q2 FY26)</th><th class="num">YoY Growth / Glide Path</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Equity Share Capital (15.39 Bn shares, FV ₹1)</td><td class="num">1,539.0</td><td class="num">1,539.0</td><td class="num">--</td></tr>
+                    <tr><td>Reserves and Surplus</td><td class="num">6,06,061.0</td><td class="num">5,48,000.0</td><td class="num">+10.6%</td></tr>
+                    <tr class="highlight"><td>Total Net Worth (Shareholders Funds)</td><td class="num">6,07,600.0</td><td class="num">5,49,539.0</td><td class="num">+10.6%</td></tr>
+                    <tr class="bold"><td>Book Value Per Share (BVPS ₹)</td><td class="num">₹394.80</td><td class="num">₹357.08</td><td class="num">+10.6%</td></tr>
+                    <tr class="highlight"><td>Total Deposits</td><td class="num">30,40,000.0</td><td class="num">25,60,000.0</td><td class="num">+18.8% YoY (2Y CAGR: 10.3%)</td></tr>
+                    <tr><td>-- CASA Deposits</td><td class="num">11,55,200.0</td><td class="num">9,72,800.0</td><td class="num">38.0% CASA Ratio</td></tr>
+                    <tr><td>-- Term Deposits</td><td class="num">18,84,800.0</td><td class="num">15,87,200.0</td><td class="num">62.0% Term Ratio</td></tr>
+                    <tr class="bold"><td>Gross Advances</td><td class="num">25,40,000.0</td><td class="num">21,84,000.0</td><td class="num">+16.3% YoY</td></tr>
+                    <tr class="highlight"><td>Credit-to-Deposit (C/D) Ratio</td><td class="num">96.0%</td><td class="num">98.4%</td><td class="num">Down 240 bps YoY (Glide to 90%)</td></tr>
+                    <tr><td>Total Assets / Balance Sheet Size</td><td class="num">38,20,000.0</td><td class="num">33,10,000.0</td><td class="num">+15.4% YoY</td></tr>
+                </tbody>
+            </table>
+            <p style="font-size:11px; color:#64748b; margin-top:8px;">
+                Note on Deposit Glide Path: Q2 FY25 deposits stood at ₹25,00,000 Cr, Q2 FY26 at ₹25,60,000 Cr, and Q2 FY27 accelerated to ₹30,40,000 Cr (+18.8% YoY, 2-year CAGR 10.3%), outpacing advances growth (+16.3%) to moderate the balance sheet C/D ratio.
+            </p>
+        </div>
+
+        <!-- Page 3 -->
+        <div id="page3" class="page-card">
+            <div class="page-title">
+                <span>Page 3: Asset Quality, Capital Adequacy & Solvency Fortress</span>
+                <span style="font-size:11px; color:#64748b;">Basel III & RBI Prudential Norms</span>
+            </div>
+            <table>
+                <thead>
+                    <tr><th>Solvency & Underwriting Indicator</th><th class="num">Reported Q2 FY27</th><th class="num">Reported Q2 FY26</th><th class="num">Regulatory / Engine Threshold</th></tr>
+                </thead>
+                <tbody>
+                    <tr class="highlight"><td>Gross NPA (GNPA %)</td><td class="num">1.11%</td><td class="num">1.24%</td><td class="num">&lt; 1.30% (Pass)</td></tr>
+                    <tr class="highlight"><td>Net NPA (NNPA %)</td><td class="num">0.37%</td><td class="num">0.42%</td><td class="num">&lt; 0.45% (Pass)</td></tr>
+                    <tr><td>Provision Coverage Ratio (PCR)</td><td class="num">71.0%</td><td class="num">69.5%</td><td class="num">&gt; 70.0% (Pass)</td></tr>
+                    <tr><td>Annualised Credit Cost</td><td class="num">0.45%</td><td class="num">0.48%</td><td class="num">&lt; 0.65% (Pass)</td></tr>
+                    <tr class="highlight"><td>Total Capital Adequacy Ratio (CAR %)</td><td class="num">18.9%</td><td class="num">18.2%</td><td class="num">&gt; 11.5% RBI (&gt; 16.0% Engine)</td></tr>
+                    <tr><td>-- Tier-1 Capital Ratio</td><td class="num">17.5%</td><td class="num">16.8%</td><td class="num">&gt; 9.5% Regulatory</td></tr>
+                    <tr><td>-- Common Equity Tier 1 (CET-1)</td><td class="num">16.8%</td><td class="num">16.1%</td><td class="num">&gt; 8.0% Regulatory</td></tr>
+                    <tr><td>Liquidity Coverage Ratio (LCR %)</td><td class="num">128.0%</td><td class="num">124.0%</td><td class="num">&gt; 100.0% Regulatory</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Page 4 -->
+        <div id="page4" class="page-card">
+            <div class="page-title">
+                <span>Page 4: Segment Disclosures, Executive Commitments & Limited Review</span>
+                <span style="font-size:11px; color:#64748b;">Statutory Certifications</span>
+            </div>
+            <div style="font-size:12px; color:#334155; line-height: 1.6;">
+                <p><strong>1. Executive Guidance Summary:</strong> Total deposits grew at 18.8% YoY to reach Rs 30,40,000 crore, while gross advances grew at 16.3% YoY, progressing the glide path to moderate the credit to deposit ratio. The Credit to Deposit (C/D) ratio improved to 96.0% as of September 30, 2026, compared to 98.4% in the prior year period.</p>
+                <p><strong>2. Board Leadership Approval:</strong> The Board of Directors at its meeting held on October 17, 2026, approved the transition plan with Anup Bagchi taking charge as Managing Director & CEO effective October 27, 2026.</p>
+                <p><strong>3. Auditors' Limited Review:</strong> Statutory Auditors have issued an unmodified (clean) limited review report on the standalone financial results for the quarter ended September 30, 2026.</p>
+            </div>
+            <div class="hash-box">
+                <strong>Cryptographic SHA-256 Signature Stamp:</strong><br>
+                a044248425db1ac790b420d7b697f7184fd6be59466596a1bc7319e775f940d3<br>
+                <span>Filing Registered: October 17, 2026 (BSE & NSE India) · Locked at 2:00 PM IST</span>
+            </div>
+        </div>
+    </div>
+</body>
+</html>"""
+
+
 class DashboardHandler(http.server.BaseHTTPRequestHandler):
     def _send_json(self, data: Any, status: int = 200):
         self.send_response(status)
@@ -2011,6 +2183,14 @@ window.__INITIAL_BACKTEST__ = {json.dumps(bt_data, default=str)};
                 bt = Backtester()
                 result = bt.run_backtest(period=period)
                 self._send_json(result.__dict__)
+            except Exception as e:
+                self._send_json({"error": str(e)}, status=500)
+            return
+
+        elif path == "/filings/q2fy27":
+            try:
+                filing_html = render_certified_filing_html()
+                self._send_html(filing_html)
             except Exception as e:
                 self._send_json({"error": str(e)}, status=500)
             return

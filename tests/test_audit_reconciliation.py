@@ -116,6 +116,19 @@ class TestAuditReconciliation(unittest.TestCase):
         self.assertEqual(metrics["nnpa_pct"], filing["net_npa_pct"])
         self.assertTrue(gate2.passed)
 
+    def test_pb_percentile_hierarchy_consistency(self):
+        """Rule 8: Percentiles must be strictly monotonic: 710 < 742 < 772 < 814.95."""
+        bvps = 394.80
+        p_710 = ValuationTargetEngine.compute_pb_percentile(710.0 / bvps)
+        p_742 = ValuationTargetEngine.compute_pb_percentile(742.0 / bvps)
+        p_772 = ValuationTargetEngine.compute_pb_percentile(772.0 / bvps)
+        p_815 = ValuationTargetEngine.compute_pb_percentile(814.95 / bvps)
+
+        self.assertLess(p_710, p_742, f"710 percentile ({p_710}) must be less than 742 ({p_742})")
+        self.assertLess(p_742, p_772, f"742 percentile ({p_742}) must be less than 772 ({p_772})")
+        self.assertLess(p_772, p_815, f"772 percentile ({p_772}) must be less than 814.95 ({p_815})")
+        self.assertAlmostEqual(p_815, 51.3, delta=2.0, msg="Current price ₹814.95 must be post-merger median (~51st percentile)")
+
 
 
 if __name__ == "__main__":
