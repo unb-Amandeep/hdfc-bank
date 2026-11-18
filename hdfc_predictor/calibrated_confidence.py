@@ -119,7 +119,8 @@ class CalibratedConfidenceEngine:
                 "downside_risk_pct": v.downside_risk_pct,
                 "prob_beat_bank_nifty": v.prob_beat_bank_nifty,
                 "confidence_interval_90": list(v.confidence_interval_90),
-                "prob_breach_floor_710": v.prob_breach_floor_710,
+                "prob_breach_floor": getattr(v, "prob_breach_floor", getattr(v, "prob_breach_floor_710", 1.87)),
+                "prob_breach_floor_710": getattr(v, "prob_breach_floor", getattr(v, "prob_breach_floor_710", 1.87)),
                 "plain_explanation": v.plain_explanation
             }
         return res

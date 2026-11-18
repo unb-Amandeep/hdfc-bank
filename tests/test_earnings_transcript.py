@@ -1,31 +1,35 @@
 """
-Unit tests for Earnings Call Transcript & Management Guidance Engine.
+Unit tests for Management Promise & Guidance Tracker Engine.
 """
 import unittest
-from hdfc_predictor.earnings_transcript import EarningsTranscriptEngine, EarningsTranscriptReport
+from hdfc_predictor.earnings_transcript import EarningsTranscriptEngine, PromiseTrackerReport
 
 
 class TestEarningsTranscriptEngine(unittest.TestCase):
-    def test_report_structure_and_weights(self):
+    def test_promise_tracker_verbatim_string_match(self):
         report = EarningsTranscriptEngine.get_latest_transcript_report()
-        self.assertIsInstance(report, EarningsTranscriptReport)
-        self.assertEqual(report.fiscal_quarter, "Q2 FY26")
+        self.assertIsInstance(report, PromiseTrackerReport)
+        self.assertTrue(report.is_source_loaded)
+        self.assertEqual(report.fiscal_period, "Q2 FY27")
+        self.assertGreater(report.total_promises_tracked, 0)
         
-        # Verify pillar weights sum to 100%
-        total_weight = sum(p.weight_pct for p in report.pillars)
-        self.assertAlmostEqual(total_weight, 100.0, places=2)
-        
-        # Check weighted score is within valid bounds
-        self.assertGreaterEqual(report.total_weighted_score, 0.0)
-        self.assertLessEqual(report.total_weighted_score, 100.0)
-        self.assertEqual(report.total_weighted_score, 81.2)
+        # Verify every promise passed strict string matching in the source file
+        for p in report.promises:
+            self.assertTrue(p.verification_check_passed, f"Promise {p.promise_id} failed verbatim check")
+            self.assertIn(p.delivery_status, ["DELIVERED", "IN PROGRESS", "BREACHED"])
+            self.assertNotEqual(p.latest_actual_value, "Not available")
 
-        # Check key speakers and quotes exist
-        self.assertTrue(any("Sashidhar Jagdishan" in p.executive_speaker for p in report.pillars))
-        self.assertTrue(any("Srinivasan Vaidyanathan" in p.executive_speaker for p in report.pillars))
-        self.assertGreater(len(report.core_strategic_priorities), 0)
-        self.assertGreater(len(report.analyst_concerns_raised), 0)
-        self.assertGreater(len(report.management_rebuttals), 0)
+    def test_missing_source_file_graceful_handling(self):
+        # Temporarily test path not found behavior
+        original_path = EarningsTranscriptEngine.SOURCE_FILE
+        from pathlib import Path
+        EarningsTranscriptEngine.SOURCE_FILE = Path("/tmp/non_existent_filing_source.json")
+        try:
+            report = EarningsTranscriptEngine.get_latest_transcript_report()
+            self.assertFalse(report.is_source_loaded)
+            self.assertEqual(report.document_name, "No source loaded")
+        finally:
+            EarningsTranscriptEngine.SOURCE_FILE = original_path
 
 
 if __name__ == "__main__":

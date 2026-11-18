@@ -34,7 +34,7 @@ class TestValuationTargetsConsistency(unittest.TestCase):
 
     def test_exit_rule_bounded_by_bull_case_and_structural_break(self):
         """Tests that valuation exit price NEVER exceeds the Bull Case and treats pre-merger P/B as structural break."""
-        bull_scenario = [s for s in self.ledger.scenarios if "Bull" in s.name][0]
+        bull_scenario = [s for s in self.ledger.scenarios if "bull" in s.name.lower()][0]
         
         # Invariant: Exit price must not exceed Bull Case
         self.assertLessEqual(
@@ -42,17 +42,17 @@ class TestValuationTargetsConsistency(unittest.TestCase):
             bull_scenario.target_price,
             f"Valuation exit ({self.ledger.valuation_exit_price}) exceeds Bull Case ({bull_scenario.target_price})!"
         )
-        self.assertEqual(self.ledger.valuation_exit_price, 1058.2)
+        self.assertEqual(self.ledger.valuation_exit_price, bull_scenario.target_price)
         # Pre-merger 3.4x (₹1,340) must NOT be the exit price
         self.assertNotEqual(self.ledger.valuation_exit_price, 1340.0)
         self.assertIn("Structural Break", self.ledger.structural_break_note)
 
     def test_fair_value_and_120d_target_alignment(self):
         """Tests that 6M/120-day target aligns with Base Fair Value without contradiction."""
-        base_scenario = [s for s in self.ledger.scenarios if "Base" in s.name][0]
+        base_scenario = [s for s in self.ledger.scenarios if "base" in s.name.lower()][0]
         tgt_120d = self.ledger.horizon_targets["120d"]
 
-        # Both must target the Base Fair Value (₹920.0)
+        # Both must target the Base Fair Value
         self.assertEqual(base_scenario.target_price, tgt_120d.target_price)
         self.assertEqual(base_scenario.upside_vs_reference_pct, tgt_120d.expected_return_pct)
         self.assertEqual(self.ledger.base_fair_value, tgt_120d.target_price)

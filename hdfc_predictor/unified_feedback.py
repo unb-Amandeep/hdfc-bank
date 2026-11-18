@@ -64,6 +64,74 @@ class AblationMetrics:
     incremental_alpha_contribution_pct: float
 
 
+@dataclass
+class CounterfactualOutcome:
+    decision_action: str            # "WAIT" or "ABSTAIN"
+    decision_price: float
+    limit_order_price: Optional[float]
+    limit_filled_5d: bool
+    counterfactual_immediate_buy_return_pct: float
+    limit_fill_realized_return_pct: Optional[float]
+    opportunity_cost_pct: float
+    event_limit_filled_5d: int      # 1 or 0
+    event_beat_index_120d: int      # 1 or 0
+    explanation: str
+
+
+class CounterfactualOutcomeLogger:
+    """
+    Logs outcomes for WAIT and ABSTAIN decisions to prevent survivor bias in the feedback loop.
+    Audits limit fill vs no-fill over 5 trading days, counterfactual buy returns, and opportunity cost.
+    """
+
+    @classmethod
+    def evaluate_wait_counterfactual(
+        cls,
+        decision_price: float,
+        limit_order_price: float,
+        subsequent_5d_lows: List[float],
+        matured_price_120d: float,
+        benchmark_120d_return_pct: float = 8.5
+    ) -> CounterfactualOutcome:
+        min_low_5d = min(subsequent_5d_lows) if subsequent_5d_lows else decision_price
+        limit_filled = min_low_5d <= limit_order_price
+
+        # Return if user had bought immediately at decision price
+        imm_return = round(((matured_price_120d - decision_price) / decision_price) * 100.0, 2)
+
+        if limit_filled:
+            limit_return = round(((matured_price_120d - limit_order_price) / limit_order_price) * 100.0, 2)
+            # Opportunity cost is negative if waiting improved the entry price (i.e. positive benefit)
+            opp_cost = round(imm_return - limit_return, 2)
+            expl = (
+                f"Limit filled at ₹{limit_order_price:.1f} within 5 days (5d low: ₹{min_low_5d:.1f}). "
+                f"Waiting improved return by {abs(opp_cost):.1f}% vs buying immediately."
+            )
+        else:
+            limit_return = None
+            opp_cost = round(imm_return, 2) if imm_return > 0 else 0.0
+            expl = (
+                f"Limit NOT filled (5d low ₹{min_low_5d:.1f} stayed above ₹{limit_order_price:.1f}). "
+                f"Opportunity cost of unexecuted order: {opp_cost:+.1f}%."
+            )
+
+        eff_return = limit_return if limit_filled else imm_return
+        beat_index = 1 if eff_return > benchmark_120d_return_pct else 0
+
+        return CounterfactualOutcome(
+            decision_action="WAIT",
+            decision_price=decision_price,
+            limit_order_price=limit_order_price,
+            limit_filled_5d=limit_filled,
+            counterfactual_immediate_buy_return_pct=imm_return,
+            limit_fill_realized_return_pct=limit_return,
+            opportunity_cost_pct=opp_cost,
+            event_limit_filled_5d=1 if limit_filled else 0,
+            event_beat_index_120d=beat_index,
+            explanation=expl
+        )
+
+
 class UnifiedScheduleManager:
     """
     Coordinates the four daily scheduled execution checkpoints for HDFC Bank.
@@ -142,7 +210,7 @@ class UnifiedScheduleManager:
         portfolio_wealth: float = 10000000.0,
         data_vintage: str = "2026-11-17",
         model_version: str = "v2.4-pooled-calibrated",
-        threshold_version: str = "th-2026.11"
+        threshold_version: str = "th-2026.11-concall-v2"
     ) -> Dict[str, Any]:
         """
         14:00 IST Snapshot: Computes deterministic tranche, creates full feature vector,
@@ -272,7 +340,10 @@ class UnifiedLearningManager:
     - Never tunes regimes to market moves (regimes defined by external indicators).
     - Never widens max drawdown limit beyond 15%.
     - Never auto-deploys a challenger model without explicit manual approval.
+    - Requires n >= 20 mature sample before recalibration.
     """
+
+    MIN_SAMPLE_SIZE_RECALIBRATION = 20
 
     def __init__(self, current_champion: str = "v2.4-pooled-calibrated"):
         self.champion_version = current_champion
@@ -295,14 +366,30 @@ class UnifiedLearningManager:
         """
         Layer 2: Calibration - fits shrinkage parameter on mature horizons.
         Regimes defined strictly by external indicators (India VIX, trend, flows).
+        Requires minimum sample size (n >= 20) before recalibration.
         """
+        n_samples = len(mature_actuals) if mature_actuals else 0
+        if n_samples < self.MIN_SAMPLE_SIZE_RECALIBRATION:
+            return {
+                "layer": "Layer 2: Calibration",
+                "status": "INSUFFICIENT_SAMPLE",
+                "sample_size": n_samples,
+                "min_required": self.MIN_SAMPLE_SIZE_RECALIBRATION,
+                "recalibration_executed": False,
+                "updated_brier_score": 0.185,
+                "shrinkage_lambda": 0.65,
+                "regime_definition": "STRICTLY_EXTERNAL_INDICATORS (India VIX, 50-SMA Distance, FII Flows)",
+                "message": f"Sample size (n={n_samples}) is below threshold (n >= 20). Retaining champion calibration."
+            }
+
         # Calculate updated Brier score
-        if mature_actuals and forecast_probs:
-            brier = float(np.mean((np.array(forecast_probs) - np.array(mature_actuals)) ** 2))
-        else:
-            brier = 0.185
+        brier = float(np.mean((np.array(forecast_probs) - np.array(mature_actuals)) ** 2))
         return {
             "layer": "Layer 2: Calibration",
+            "status": "RECALIBRATED",
+            "sample_size": n_samples,
+            "min_required": self.MIN_SAMPLE_SIZE_RECALIBRATION,
+            "recalibration_executed": True,
             "updated_brier_score": round(brier, 4),
             "shrinkage_lambda": 0.65,
             "regime_definition": "STRICTLY_EXTERNAL_INDICATORS (India VIX, 50-SMA Distance, FII Flows)"

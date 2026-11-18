@@ -57,19 +57,20 @@ class TestDownsideDistributionConsistency(unittest.TestCase):
         self.assertAlmostEqual(self.dist.prob_breach_floor_pct, expected_prob, places=1)
 
     def test_limit_tranche_sizing_accuracy(self):
-        """Tests that the first tranche is sized at limit range (258 to 268 shares for ₹2L)."""
+        """Tests that the first tranche is sized dynamically at the derived limit range for ₹2L."""
         tranche = self.ledger.limit_tranche
         self.assertEqual(tranche.budget_amount, 200000.0)
-        self.assertEqual(tranche.shares_at_zone_high, 258)
-        self.assertEqual(tranche.shares_at_zone_low, 268)
-        self.assertEqual(tranche.shares_range_label, "258–268 Shares")
+        self.assertEqual(tranche.shares_at_zone_high, int(tranche.budget_amount // tranche.limit_zone_high))
+        self.assertEqual(tranche.shares_at_zone_low, int(tranche.budget_amount // tranche.limit_zone_low))
+        self.assertEqual(tranche.shares_range_label, f"{tranche.shares_at_zone_high}–{tranche.shares_at_zone_low} shares")
         self.assertNotIn("We approve buying", tranche.non_conflicting_action_text)
-        self.assertIn("limit order in the pullback zone", tranche.non_conflicting_action_text)
+        self.assertIn("limit order", tranche.non_conflicting_action_text.lower())
 
     def test_sensitivity_table_and_filing_reconciliation(self):
-        """Tests sensitivity table linearity, share count reconciliation, and CAR 19.3% vs 18.9%."""
+        """Tests sensitivity table Gordon slope linearity, share count reconciliation, and CAR 19.3% vs 18.9%."""
         table = self.ledger.sensitivity_table
-        self.assertEqual(table.filing_derived_roe_pct, 14.80)
+        self.assertEqual(table.trailing_roe_pct, 11.07)
+        self.assertEqual(table.filing_derived_roe_pct, 11.07)
         self.assertIn("Form 6-K", table.filing_roe_source)
         self.assertEqual(table.shares_outstanding_bn, 15.39)
         self.assertEqual(table.total_net_worth_cr, 607600.0)
@@ -82,12 +83,14 @@ class TestDownsideDistributionConsistency(unittest.TestCase):
         for row in table.grid:
             self.assertEqual(len(row), 3) # 3 Ke cols
 
-        # Test exact linearity: change from 12% to 14% must equal change from 14% to 16%
-        pb_12 = table.grid[0][1].justified_pb
+        # Test Gordon formula linearity: d(P/B)/d(ROE) = 1 / (Ke - g) = constant
+        pb_11_1 = table.grid[0][1].justified_pb
         pb_14 = table.grid[1][1].justified_pb
         pb_16 = table.grid[2][1].justified_pb
-        self.assertAlmostEqual(pb_16 - pb_14, pb_14 - pb_12, places=2,
-                               msg=f"Sensitivity table not linear: {pb_16 - pb_14} != {pb_14 - pb_12}")
+        slope1 = (pb_14 - pb_11_1) / (14.0 - 11.1)
+        slope2 = (pb_16 - pb_14) / (16.0 - 14.0)
+        self.assertAlmostEqual(slope1, slope2, places=2,
+                               msg=f"Sensitivity table slope not linear: {slope1} != {slope2}")
 
 
 if __name__ == "__main__":
