@@ -172,24 +172,27 @@ class EventIntelligenceEngine:
         if not display_events and classified:
             display_events = classified
 
-        # 9. "Why did it move?" line extraction - prioritize specific HDFC bank catalysts
-        hdfc_specific = [e for e in display_events if e.category in ["INSTITUTIONAL_MACRO", "DEPOSITS_CD", "EARNINGS_NIM", "ASSET_QUALITY", "RBI_POLICY"]]
-        if hdfc_specific:
-            top_e = hdfc_specific[0]
-            why_moved = f"{top_e.category_label}: {top_e.title}. {top_e.explanation}"
-        elif display_events and display_events[0].materiality != "ROUTINE_NOISE":
+        # Recent headlines & media flow - show dated headlines, never unproven causal claims
+        if display_events:
             top_e = display_events[0]
-            why_moved = f"{top_e.category_label}: {top_e.title}. {top_e.explanation}"
+            latest_headline = f"{top_e.source} ({top_e.published_date}): \"{top_e.title}\""
         else:
-            why_moved = (
-                "BSE/NSE Q2 FY27 standalone filing confirmed robust deposit growth of 18.8% YoY and PAT of ₹19,510 Cr, "
-                "driving C/D ratio down to 96.0% with pristine Gross NPA at 1.11%."
-            )
+            latest_headline = "No breaking regulatory disclosures in current window."
+
+        narrative_note = (
+            "Market Narrative (Unproven): Coverage of recent bank movement highlights post-earnings stabilization, "
+            "sustained deposit growth, and executive succession clarity (Anup Bagchi appointed MD & CEO Oct 27, 2026). "
+            "Causal attribution of price swings remains unproven; accumulation strictly follows deterministic rules."
+        )
+
+        why_moved = f"{latest_headline}. {narrative_note}"
 
         return {
             "total_articles_scanned": len(raw_articles),
             "unique_stories": len(classified),
             "material_events_count": len(display_events),
+            "latest_headline": latest_headline,
+            "narrative_note": narrative_note,
             "why_did_it_move": why_moved,
             "material_events": [e.__dict__ for e in display_events[:6]],
             "all_events": [e.__dict__ for e in classified[:12]]

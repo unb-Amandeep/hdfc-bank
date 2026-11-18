@@ -239,7 +239,11 @@ class ValuationTargetEngine:
         return scenarios
 
     @classmethod
-    def compute_sensitivity_table(cls, bvps: float = DEFAULT_BVPS) -> ROESensitivityTable:
+    def compute_sensitivity_table(
+        cls,
+        bvps: float = DEFAULT_BVPS,
+        reference_price: float = 817.80
+    ) -> ROESensitivityTable:
         """
         Builds the 3x3 sensitivity matrix using textbook Gordon Growth:
         P/B = (ROE - g) / (Ke - g) at g = 8.0% terminal growth.
@@ -263,8 +267,8 @@ class ValuationTargetEngine:
                 ))
             grid.append(row)
 
-        # Implied expectations for g = 6%, 7%, 8%
-        ref_price = 817.80
+        # Implied expectations for g = 6%, 7%, 8% derived from single reference price
+        ref_price = float(reference_price)
         implied = [
             cls.calculate_implied_roe(ref_price, bvps, g_val, 12.28)
             for g_val in [6.0, 7.0, 8.0]
@@ -390,7 +394,7 @@ class ValuationTargetEngine:
         exit_price = bull_scenario.target_price # Bounded strictly by Bull Case
         margin_of_safety = round(((base_fair_val - ref) / base_fair_val) * 100.0, 1)
 
-        sensitivity = cls.compute_sensitivity_table(bvps)
+        sensitivity = cls.compute_sensitivity_table(bvps, reference_price=ref)
         buy_zone = cls.derive_buy_zone(base_fair_val, bvps, reference_price=ref)
         downside = cls.compute_downside_distribution(ref, bear_scenario.target_price)
 

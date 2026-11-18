@@ -225,11 +225,12 @@ class AccumulationGatesEngine:
     @classmethod
     def evaluate_gate_2_solvency(
         cls,
-        car_pct: float,
-        gnpa_pct: float,
-        nnpa_pct: float,
-        prior_year_gnpa_pct: float = 1.34,
-        deposit_growth_pct: float = 15.1
+        car_pct: float = 18.9,
+        gnpa_pct: float = 1.11,
+        nnpa_pct: float = 0.37,
+        prior_year_gnpa_pct: float = 1.24,
+        deposit_growth_pct: float = 18.8,
+        cd_ratio_pct: float = 96.0
     ) -> GateEvaluationResult:
         """
         Gate 2: Balance Sheet Solvency & Trend.
@@ -237,17 +238,19 @@ class AccumulationGatesEngine:
         Failure = FREEZE NEW BUYING + REVIEW (with 2-quarter hysteresis).
         """
         cfg = BANK_SAFETY_CONFIG
-        car_ok = car_pct >= cfg["car_absolute_floor_pct"] # 19.3% >= 14.0%
+        car_ok = car_pct >= cfg["car_absolute_floor_pct"] # 18.9% >= 14.0%
         gnpa_ok = gnpa_pct <= cfg["gnpa_absolute_ceiling_pct"] # 1.11% <= 1.80%
-        nnpa_ok = nnpa_pct <= cfg["nnpa_absolute_ceiling_pct"] # 0.33% <= 0.45%
+        nnpa_ok = nnpa_pct <= cfg["nnpa_absolute_ceiling_pct"] # 0.37% <= 0.45%
         
         # Trend check: GNPA deterioration YoY in bps
         gnpa_change_bps = (gnpa_pct - prior_year_gnpa_pct) * 100.0
-        trend_ok = gnpa_change_bps <= cfg["gnpa_max_annual_deterioration_bps"] # -23 bps <= +30 bps
+        trend_ok = gnpa_change_bps <= cfg["gnpa_max_annual_deterioration_bps"] # -13 bps <= +30 bps
 
-        deposit_ok = deposit_growth_pct >= cfg["deposit_growth_minimum_pct"] # 15.1% >= 11.0%
+        deposit_ok = deposit_growth_pct >= cfg["deposit_growth_minimum_pct"] # 18.8% >= 11.0%
 
-        passed = car_ok and gnpa_ok and nnpa_ok and trend_ok and deposit_ok
+        cd_ok = cd_ratio_pct <= cfg.get("cd_ratio_warning_threshold_pct", 102.0)
+
+        passed = car_ok and gnpa_ok and nnpa_ok and trend_ok and deposit_ok and cd_ok
 
         evidence = {
             "car_pct": car_pct,
@@ -255,8 +258,10 @@ class AccumulationGatesEngine:
             "nnpa_pct": nnpa_pct,
             "gnpa_change_yoy_bps": round(gnpa_change_bps, 1),
             "deposit_growth_yoy_pct": deposit_growth_pct,
+            "cd_ratio_pct": cd_ratio_pct,
             "car_floor_pct": cfg["car_absolute_floor_pct"],
-            "gnpa_ceiling_pct": cfg["gnpa_absolute_ceiling_pct"]
+            "gnpa_ceiling_pct": cfg["gnpa_absolute_ceiling_pct"],
+            "cd_ceiling_pct": cfg.get("cd_ratio_warning_threshold_pct", 102.0)
         }
 
         if passed:
@@ -266,7 +271,7 @@ class AccumulationGatesEngine:
                 status="PASS",
                 passed=True,
                 evidence_metrics=evidence,
-                plain_rationale="Passed all solvency floors: CAR 19.3% (well above 14.0% safety floor); GNPA 1.11% improving YoY; Deposit growth healthy at 15.1%.",
+                plain_rationale=f"Passed all solvency floors: CAR {car_pct:.1f}% (safety floor {cfg['car_absolute_floor_pct']:.1f}%); GNPA {gnpa_pct:.2f}%; Deposit growth healthy at {deposit_growth_pct:.1f}% YoY; C/D ratio at {cd_ratio_pct:.1f}%.",
                 action_directive="PROCEED"
             )
         else:
@@ -512,8 +517,9 @@ class AccumulationGatesEngine:
             car_pct=18.9,
             gnpa_pct=1.11,
             nnpa_pct=0.37,
-            prior_year_gnpa_pct=1.34,
-            deposit_growth_pct=18.8
+            prior_year_gnpa_pct=1.24,
+            deposit_growth_pct=18.8,
+            cd_ratio_pct=96.0
         )
 
         # Gate 3: Base Formation

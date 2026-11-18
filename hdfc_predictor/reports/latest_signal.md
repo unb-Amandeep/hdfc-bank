@@ -1,12 +1,12 @@
 # 🔴 HDFC Bank Daily 2:00 PM Signal Report
-**Date & Time**: Wednesday, 18 November 2026 at 02:52 PM IST  
+**Date & Time**: Wednesday, 18 November 2026 at 03:48 PM IST  
 **Symbol**: `HDFCBANK.NS` | **Data Source**: NSE Historical Verified Cache (Offline / Sandboxed)
 
 ---
 
 ## ⚡ Recommended Action: **SELL / TRIM**
 - **Current Share Price**: **₹814.95** (-0.19%)
-- **Signal Confidence**: **53.9%**
+- **Signal Confidence**: **53.5%**
 - **Recommended Target**: **₹769.72**
 - **Recommended Stop-Loss**: **₹842.09**
 - **Risk / Reward**: 1 : 1.67

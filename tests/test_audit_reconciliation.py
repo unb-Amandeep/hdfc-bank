@@ -100,6 +100,23 @@ class TestAuditReconciliation(unittest.TestCase):
         self.assertFalse(g0_fail.passed)
         self.assertEqual(g0_fail.status, "ABSTAIN")
 
+    def test_gate_2_and_filing_source_consistency(self):
+        """Rule 7: Gate 2 metrics must match certified Q2 FY27 filing exactly."""
+        import json
+        with open("hdfc_predictor/data/hdfc_q2fy27_filing_source.json") as f:
+            data = json.load(f)
+            filing = data["document_metadata"]["reported_metrics"]
+        
+        gate2 = AccumulationGatesEngine.evaluate_gate_2_solvency()
+        metrics = gate2.evidence_metrics
+        self.assertEqual(metrics["car_pct"], filing["car_total_pct"])
+        self.assertEqual(metrics["deposit_growth_yoy_pct"], filing["deposit_growth_yoy_pct"])
+        self.assertEqual(metrics["cd_ratio_pct"], filing["cd_ratio_pct"])
+        self.assertEqual(metrics["gnpa_pct"], filing["gross_npa_pct"])
+        self.assertEqual(metrics["nnpa_pct"], filing["net_npa_pct"])
+        self.assertTrue(gate2.passed)
+
+
 
 if __name__ == "__main__":
     unittest.main()

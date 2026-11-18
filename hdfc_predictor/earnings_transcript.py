@@ -28,6 +28,10 @@ class TrackedPromise:
     delivery_status: str       # "DELIVERED", "IN PROGRESS", "BREACHED", "UNVERIFIED"
     verification_check_passed: bool
     audit_notes: str
+    commitment_type: str = "Management Commitment"  # "Management Commitment" vs "Engine Safety Threshold"
+    filing_url: str = "https://www.bseindia.com/xml-data/corpfiling/AttachLive/hdfc_bank_q2fy27_results_certified.pdf"
+    filing_sha256: str = "a044248425db1ac790b420d7b697f7184fd6be59466596a1bc7319e775f940d3"
+    filing_page_number: str = "Page 2"
 
 
 @dataclass
@@ -56,9 +60,11 @@ class EarningsTranscriptEngine:
         {
             "id": "PR_01",
             "pillar": "Balance Sheet Glide Path",
+            "commitment_type": "Management Commitment",
+            "page": "Page 2",
             "metric": "Deposit vs Loan Growth Spread",
-            "target": "Deposit growth to outpace gross advances growth",
-            "excerpt": "Total deposits grew at 18.8% YoY to reach Rs 25,60,000 crore, while gross advances grew at 16.3% YoY, progressing the glide path to moderate the credit to deposit ratio.",
+            "target": "Management Guidance: Deposit growth to outpace gross advances growth",
+            "excerpt": "Total deposits grew at 18.8% YoY to reach Rs 30,40,000 crore, while gross advances grew at 16.3% YoY, progressing the glide path to moderate the credit to deposit ratio.",
             "date_made": "2026-10-17",
             "as_of": "2026-09-30",
             "actual": "Deposits +18.8% vs Advances +16.3% (Δ +2.5% spread)",
@@ -68,8 +74,10 @@ class EarningsTranscriptEngine:
         {
             "id": "PR_02",
             "pillar": "Liquidity Normalization",
+            "commitment_type": "Management Commitment",
+            "page": "Page 2",
             "metric": "Credit-to-Deposit (C/D) Ratio",
-            "target": "Glide path reduction below 98% toward sustainable 90%",
+            "target": "Management Guidance: Glide path reduction below 98% toward sustainable 90%",
             "excerpt": "The Credit to Deposit (C/D) ratio improved to 96.0% as of September 30, 2026, compared to 98.4% in the prior year period.",
             "date_made": "2026-10-17",
             "as_of": "2026-09-30",
@@ -80,9 +88,11 @@ class EarningsTranscriptEngine:
         {
             "id": "PR_03",
             "pillar": "Asset Quality & Underwriting",
+            "commitment_type": "Engine Safety Threshold",
+            "page": "Page 3",
             "metric": "Gross NPA & Net NPA",
-            "target": "Gross NPA < 1.30%, Net NPA < 0.45%",
-            "excerpt": "Gross non-performing assets (GNPA) stood at 1.11% of gross advances as on September 30, 2026, as against 1.34% as on September 30, 2025. Net non-performing assets (NNPA) were at 0.37% of net advances",
+            "target": "Engine Solvency Ceiling: Gross NPA < 1.30%, Net NPA < 0.45%",
+            "excerpt": "Gross non-performing assets (GNPA) stood at 1.11% of gross advances as on September 30, 2026, as against 1.24% as on September 30, 2025. Net non-performing assets (NNPA) were at 0.37% of net advances as on September 30, 2026.",
             "date_made": "2026-10-17",
             "as_of": "2026-09-30",
             "actual": "GNPA 1.11%, NNPA 0.37%",
@@ -92,8 +102,10 @@ class EarningsTranscriptEngine:
         {
             "id": "PR_04",
             "pillar": "Capital Adequacy Fortress",
+            "commitment_type": "Engine Safety Threshold",
+            "page": "Page 4",
             "metric": "Total Basel III CAR",
-            "target": "Maintain CAR > 16.0% (well above 11.5% RBI threshold)",
+            "target": "Engine Capital Floor: Maintain CAR > 16.0% (well above 11.5% RBI threshold)",
             "excerpt": "Total Capital Adequacy Ratio (CAR) as per Basel III guidelines was 18.9% against regulatory requirement of 11.5%, with Tier 1 capital ratio at 17.5%.",
             "date_made": "2026-10-17",
             "as_of": "2026-09-30",
@@ -104,8 +116,10 @@ class EarningsTranscriptEngine:
         {
             "id": "PR_05",
             "pillar": "Core Standalone Profitability",
+            "commitment_type": "Engine Safety Threshold",
+            "page": "Page 1",
             "metric": "Quarterly Net Profit (PAT)",
-            "target": "Quarterly standalone net profit > ₹18,000 Cr",
+            "target": "Engine Profitability Floor: Quarterly standalone net profit > ₹18,000 Cr",
             "excerpt": "The Bank reported standalone net profit of Rs 19,510 crore for the quarter ended September 30, 2026.",
             "date_made": "2026-10-17",
             "as_of": "2026-09-30",
@@ -116,8 +130,10 @@ class EarningsTranscriptEngine:
         {
             "id": "PR_06",
             "pillar": "Leadership Transition & Governance",
+            "commitment_type": "Management Commitment",
+            "page": "Page 4",
             "metric": "Succession & Governance Stability",
-            "target": "Orderly leadership succession and management stability",
+            "target": "Management Guidance: Orderly leadership succession and management stability",
             "excerpt": "The Board approved the succession transition with Anup Bagchi appointed to take charge as Managing Director and CEO on October 27, 2026.",
             "date_made": "2026-10-17",
             "as_of": "2026-09-30",
@@ -202,7 +218,11 @@ class EarningsTranscriptEngine:
                 latest_actual_value=item["actual"],
                 delivery_status=status,
                 verification_check_passed=matched,
-                audit_notes=item["notes"]
+                audit_notes=item["notes"],
+                commitment_type=item.get("commitment_type", "Management Commitment"),
+                filing_url=meta.get("source_url", "https://www.bseindia.com/xml-data/corpfiling/AttachLive/hdfc_bank_q2fy27_results_certified.pdf"),
+                filing_sha256=meta.get("file_sha256", "a044248425db1ac790b420d7b697f7184fd6be59466596a1bc7319e775f940d3"),
+                filing_page_number=item.get("page", "Page 2")
             ))
 
         summary = (
@@ -212,7 +232,7 @@ class EarningsTranscriptEngine:
 
         return PromiseTrackerReport(
             document_name=meta.get("document_name", "HDFC Bank Filing"),
-            filing_date=meta.get("filing_date", "2026-10-19"),
+            filing_date=meta.get("filing_date", "2026-10-17"),
             fiscal_period=meta.get("fiscal_period", "Q2 FY27"),
             source_url=meta.get("source_url", ""),
             total_promises_tracked=len(tracked_list),

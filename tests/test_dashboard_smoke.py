@@ -125,14 +125,21 @@ class TestDashboardSmoke(unittest.TestCase):
         self.assertIn("benchmark_equity", pt)
         self.assertIn("sip_equity", pt)
 
-    def test_04_api_trigger_signal_success(self):
-        """Rule 3: POST /api/trigger-signal must return 200 SUCCESS (No 500 crashes)."""
+    def test_04_api_trigger_signal_async_accepted(self):
+        """Rule 3: POST /api/trigger-signal must return HTTP 202 Accepted without blocking."""
         status, body = self.make_request("POST", "/api/trigger-signal", body=b"{}")
-        self.assertEqual(status, 200)
+        self.assertEqual(status, 202)
         data = json.loads(body.decode("utf-8"))
 
-        self.assertEqual(data.get("status"), "SUCCESS")
-        self.assertIn("recalculated", data.get("message", "").lower())
+        self.assertIn(data.get("status"), ["RUNNING", "SUCCESS"])
+        self.assertIn("started", data.get("message", "").lower())
+
+        # Polling /api/refresh-status returns 200 OK
+        ref_status, ref_body = self.make_request("GET", "/api/refresh-status")
+        self.assertEqual(ref_status, 200)
+        ref_data = json.loads(ref_body.decode("utf-8"))
+        self.assertIn("status", ref_data)
+        self.assertIn("message", ref_data)
 
     def test_05_api_history_returns_valid_records(self):
         """Rule 10: GET /api/history returns 200 OK and valid list."""

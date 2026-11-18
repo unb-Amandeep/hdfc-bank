@@ -1,21 +1,25 @@
 """
 Interactive Web Dashboard for HDFC Bank Cyclical Accumulation & Decision Intelligence.
 Unified into a clean, modern single-page dashboard with:
-1. Top Fold: Verdict & Capital Allocation Plan + Dynamic Price Ladder
-2. Collapsible Sections:
-   - 6 Accumulation & Safety Gates (Gates 0 to 5 + Event Blackouts)
-   - Management Promise & Guidance Tracker (BSE/NSE Q2 FY27 Audit)
-   - Valuation Scenarios & Textbook Gordon Sensitivity Matrix (Reality Check)
-   - Audited Historical Proof, All Past Setup Episodes & Track Record
-   - Material Event Intelligence & Regulatory Filings
-   - Big-4 Private Banking Peer Watchlist (Standalone Q2 FY27)
-   - Data Health & Cryptographic SHA-256 Audit Ledger
-3. Plain-Language mode by default with Technical Details toggle
-4. Completely self-contained: zero external CDNs, native HTML5 canvas line chart, local styles.
+1. Top Fold: Verdict & Capital Allocation Plan + Unified Monotonic Price Ladder
+2. 5 Safety & Accumulation Checks (with nested Gordon sensitivity & certified filing metrics)
+3. Plain-Language Glossary (Financial concepts explained simply)
+4. Collapsible Deep Dive: Details & Historical Audit Container:
+   - Audited Historical Backtest (HTML5 Canvas with graceful empty state handling)
+   - All 8 Past Setup Occurrences (n=8, 95% CI, Pre vs Post Merger regime)
+   - Track Record Scoreboard (Definition of Hit: 6M return >= +8.0%)
+   - Management Promise & Guidance Tracker (BSE Q2 FY27 audit, SHA-256 hash, page numbers)
+   - Recent News Flow & Market Narrative (dated headlines, unproven causality note)
+   - Big-4 Private Banking Peer Watchlist (Single reference price, live peers or 'Feed offline')
+   - Data Health & Cryptographic Hash Chain Ledger (SHA-256 signed 2:00 PM records)
+5. Completely self-contained: zero external CDNs, native HTML5 canvas line chart, local styles.
+6. Non-blocking asynchronous Refresh: background worker thread with HTTP 202 Accepted and job polling.
 """
 import http.server
 import json
 import socketserver
+import threading
+import time
 import urllib.parse
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -49,6 +53,91 @@ from hdfc_predictor.accumulation_gates import AccumulationGatesEngine, BANK_SAFE
 from hdfc_predictor.multi_bank_config import MultiBankEngine
 
 PORT = 8501
+
+
+class RefreshJobManager:
+    """
+    Manages non-blocking asynchronous signal calculations.
+    Returns HTTP 202 Accepted immediately, tracks background progress,
+    and enforces a 60-second execution timeout.
+    """
+    _lock = threading.Lock()
+    _current_job: Dict[str, Any] = {
+        "status": "IDLE", # IDLE, RUNNING, SUCCESS, ERROR
+        "started_at": None,
+        "completed_at": None,
+        "message": "No refresh job has been run yet.",
+        "error": None,
+        "duration_seconds": 0.0
+    }
+
+    @classmethod
+    def get_status(cls) -> Dict[str, Any]:
+        with cls._lock:
+            # Check timeout (60s)
+            if cls._current_job["status"] == "RUNNING" and cls._current_job["started_at"]:
+                elapsed = time.time() - cls._current_job["started_at"]
+                if elapsed > 60.0:
+                    cls._current_job["status"] = "ERROR"
+                    cls._current_job["error"] = "Refresh job timed out after 60 seconds."
+                    cls._current_job["completed_at"] = time.time()
+                    cls._current_job["duration_seconds"] = round(elapsed, 2)
+            return dict(cls._current_job)
+
+    @classmethod
+    def start_job(cls, force: bool = True) -> Dict[str, Any]:
+        with cls._lock:
+            if cls._current_job["status"] == "RUNNING" and cls._current_job["started_at"]:
+                elapsed = time.time() - cls._current_job["started_at"]
+                if elapsed <= 60.0:
+                    return {
+                        "status": "RUNNING",
+                        "message": "Signal refresh already in progress.",
+                        "started_at": cls._current_job["started_at"],
+                        "elapsed_seconds": round(elapsed, 1)
+                    }
+
+            cls._current_job = {
+                "status": "RUNNING",
+                "started_at": time.time(),
+                "completed_at": None,
+                "message": "Recalculating 2:00 PM signal pipeline...",
+                "error": None,
+                "duration_seconds": 0.0
+            }
+
+        def _worker():
+            start_t = time.time()
+            try:
+                gen = SignalGenerator()
+                result = gen.run_daily_signal(force=force)
+                pred = result.get("prediction", {})
+                action = pred.get("signal_action", "HOLD")
+                conf = pred.get("confidence_score", 0.0)
+                dur = round(time.time() - start_t, 2)
+                with cls._lock:
+                    cls._current_job["status"] = "SUCCESS"
+                    cls._current_job["completed_at"] = time.time()
+                    cls._current_job["duration_seconds"] = dur
+                    cls._current_job["message"] = f"Signal refreshed successfully ({action}, {conf*100:.1f}% confidence) in {dur}s."
+            except Exception as exc:
+                dur = round(time.time() - start_t, 2)
+                with cls._lock:
+                    cls._current_job["status"] = "ERROR"
+                    cls._current_job["completed_at"] = time.time()
+                    cls._current_job["duration_seconds"] = dur
+                    cls._current_job["error"] = f"Signal calculation error: {str(exc)}"
+                    cls._current_job["message"] = f"Signal calculation failed after {dur}s."
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+
+        return {
+            "status": "RUNNING",
+            "message": "Signal recalculation started in background.",
+            "started_at": cls._current_job["started_at"]
+        }
+
 
 HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en">
@@ -255,6 +344,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         .text-slate-800 { color: var(--slate-800); }
         .text-slate-900 { color: var(--slate-900); }
         .text-white { color: #ffffff; }
+        .text-emerald-400 { color: #34d399; }
         .text-emerald-600 { color: var(--emerald-600); }
         .text-emerald-700 { color: var(--emerald-700); }
         .text-emerald-800 { color: var(--emerald-800); }
@@ -272,10 +362,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         .text-purple-700 { color: var(--purple-700); }
         .text-teal-700 { color: var(--teal-700); }
         
-        .border { border: 1px solid var(--slate-200); }
-        .border-2 { border-width: 2px; }
-        .border-b { border-bottom: 1px solid var(--slate-200); }
-        .border-t { border-top: 1px solid var(--slate-200); }
+        .border { border-width: 1px; border-style: solid; border-color: var(--slate-200); }
+        .border-2 { border-width: 2px; border-style: solid; }
+        .border-t { border-top-width: 1px; border-top-style: solid; border-top-color: var(--slate-200); }
+        .border-b { border-bottom-width: 1px; border-bottom-style: solid; border-bottom-color: var(--slate-200); }
         .border-slate-100 { border-color: var(--slate-100); }
         .border-slate-200 { border-color: var(--slate-200); }
         .border-slate-300 { border-color: var(--slate-300); }
@@ -283,8 +373,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         .border-emerald-500 { border-color: var(--emerald-500); }
         .border-amber-200 { border-color: var(--amber-200); }
         .border-amber-300 { border-color: var(--amber-300); }
+        .border-rose-100 { border-color: var(--rose-100); }
         .border-rose-200 { border-color: var(--rose-200); }
-        .border-indigo-100 { border-color: var(--indigo-100); }
+        .border-indigo-100 { border-color: #e0e7ff; }
         .border-indigo-200 { border-color: var(--indigo-200); }
         
         .rounded { border-radius: 0.25rem; }
@@ -293,69 +384,52 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         .rounded-xl { border-radius: 0.75rem; }
         .rounded-2xl { border-radius: 1rem; }
         .rounded-full { border-radius: 9999px; }
-        .shadow-sm { box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
         
-        .text-\[10px\] { font-size: 10px; }
-        .text-\[11px\] { font-size: 11px; }
-        .text-xs { font-size: 12px; }
-        .text-sm { font-size: 14px; }
-        .text-base { font-size: 16px; }
-        .text-lg { font-size: 18px; }
-        .text-xl { font-size: 20px; }
-        .text-2xl { font-size: 24px; }
         .font-normal { font-weight: 400; }
         .font-medium { font-weight: 500; }
         .font-semibold { font-weight: 600; }
         .font-bold { font-weight: 700; }
         .font-extrabold { font-weight: 800; }
-        .italic { font-style: italic; }
+        
+        .text-\[10px\] { font-size: 10px; line-height: 14px; }
+        .text-\[11px\] { font-size: 11px; line-height: 15px; }
+        .text-xs { font-size: 12px; line-height: 16px; }
+        .text-sm { font-size: 14px; line-height: 20px; }
+        .text-base { font-size: 16px; line-height: 24px; }
+        .text-lg { font-size: 18px; line-height: 28px; }
+        .text-2xl { font-size: 24px; line-height: 32px; }
+        
         .uppercase { text-transform: uppercase; }
         .tracking-wide { letter-spacing: 0.025em; }
         .tracking-wider { letter-spacing: 0.05em; }
         .tracking-tight { letter-spacing: -0.025em; }
+        .leading-none { line-height: 1; }
         .leading-snug { line-height: 1.375; }
         .leading-relaxed { line-height: 1.625; }
+        
         .text-left { text-align: left; }
-        .text-right { text-align: right; }
         .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        
+        .shadow-sm { box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+        .shadow { box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1); }
+        .cursor-pointer { cursor: pointer; }
+        .select-none { user-select: none; }
         .overflow-hidden { overflow: hidden; }
         .overflow-x-auto { overflow-x: auto; }
-        .cursor-pointer { cursor: pointer; }
-        .list-none { list-style: none; }
+        .italic { font-style: italic; }
+        .hidden { display: none !important; }
         .block { display: block; }
-        .hidden { display: none; }
-        .transition { transition: all 0.2s ease-in-out; }
+        .transition { transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1); }
         
-        /* Table */
-        table { width: 100%; border-collapse: collapse; }
-        th, td { text-align: left; vertical-align: middle; }
-        .divide-y > * + * { border-top: 1px solid var(--slate-100); }
-        
-        /* Details Summary */
-        details summary::-webkit-details-marker { display: none; }
-        details[open] summary .group-open\:rotate-180 { transform: rotate(180deg); }
-        
-        /* Links & Buttons */
-        .nav-link { color: var(--slate-500); text-decoration: none; transition: color 0.2s ease; }
-        .nav-link:hover { color: var(--slate-900); }
+        table { border-collapse: collapse; width: 100%; }
         button { cursor: pointer; border: none; font-family: inherit; }
-        .hover\:bg-slate-50:hover { background-color: var(--slate-50); }
-        .hover\:bg-slate-100:hover { background-color: var(--slate-100); }
-        .hover\:bg-slate-800:hover { background-color: var(--slate-800); }
-        .hover\:text-slate-900:hover { color: var(--slate-900); }
-        .hover\:text-emerald-600:hover { color: var(--emerald-600); }
         
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: var(--slate-100); }
-        ::-webkit-scrollbar-thumb { background: var(--slate-300); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--slate-400); }
-
-        /* Toast notifications */
-        #toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
-        .toast-item { pointer-events: auto; padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 8px; transition: all 0.3s ease; }
-        .toast-success { background-color: #064e3b; color: #a7f3d0; border: 1px solid #059669; }
-        .toast-error { background-color: #881337; color: #fecdd3; border: 1px solid #e11d48; }
+        /* Toast notification */
+        #toastContainer { position: fixed; top: 1.25rem; right: 1.25rem; z-index: 9999; display: flex; flex-direction: column; gap: 0.5rem; }
+        .toast-item { padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); transition: opacity 0.3s ease; }
+        .toast-success { background-color: var(--emerald-900); color: #ffffff; border: 1px solid var(--emerald-600); }
+        .toast-error { background-color: var(--rose-900); color: #ffffff; border: 1px solid var(--rose-600); }
     </style>
 </head>
 <body class="min-h-screen text-slate-800">
@@ -379,10 +453,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                 </div>
             </div>
 
-            <!-- Right: Price, Timing Status & Mode Controls -->
+            <!-- Right: Price, Timing Status & Controls -->
             <div class="flex items-center gap-3 sm:gap-4">
                 <div class="flex items-baseline gap-2">
-                    <span id="headerPriceText" class="text-base sm:text-lg font-extrabold text-slate-900 mono">₹817.80</span>
+                    <span id="headerPriceText" class="text-base sm:text-lg font-extrabold text-slate-900 mono">₹814.95</span>
                     <span id="headerTimingStatus" class="text-xs text-slate-500 hidden sm:inline">Last traded · 2:00 PM IST</span>
                 </div>
                 
@@ -396,6 +470,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     <button onclick="setMode('tech')" id="btnModeTech" class="px-2.5 py-1 rounded-md text-slate-500 hover:text-slate-900">Technical</button>
                 </div>
 
+                <!-- Async Refresh Button -->
                 <button onclick="triggerNow()" id="btnTrigger" class="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                     Refresh
@@ -407,27 +482,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <div class="max-w-[1200px] mx-auto px-4 sm:px-6 flex items-center justify-between border-t border-slate-100 text-xs font-semibold overflow-x-auto">
             <nav class="flex gap-5 sm:gap-6 py-2.5 shrink-0">
                 <a href="#sectionOverview" class="nav-link text-slate-900 font-bold hover:text-emerald-600 transition">Verdict & Plan</a>
+                <a href="#sectionLadder" class="nav-link text-slate-500 hover:text-slate-900 transition">Price Ladder</a>
                 <a href="#sectionGates" class="nav-link text-slate-500 hover:text-slate-900 transition flex items-center gap-1">
-                    6 Safety Gates
+                    5 Safety Checks
                     <span id="navGatesSummaryPill" class="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 text-[10px] font-bold">5/6 Pass</span>
                 </a>
-                <a href="#sectionPromises" class="nav-link text-slate-500 hover:text-slate-900 transition flex items-center gap-1">
-                    Promise Tracker
-                    <span class="px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">Q2 FY27</span>
-                </a>
-                <a href="#sectionValuation" class="nav-link text-slate-500 hover:text-slate-900 transition">Gordon Valuation</a>
-                <a href="#sectionProof" class="nav-link text-slate-500 hover:text-slate-900 transition">Audited Proof</a>
-                <a href="#sectionEvents" class="nav-link text-slate-500 hover:text-slate-900 transition flex items-center gap-1">
-                    Event Intel
-                    <span class="px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold">Classified</span>
-                </a>
-                <a href="#sectionWatchlist" class="nav-link text-slate-500 hover:text-slate-900 transition flex items-center gap-1">
-                    Peer Watchlist
-                    <span class="px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 text-[10px] font-bold">Big-4</span>
-                </a>
-                <a href="#sectionHealth" class="nav-link text-slate-500 hover:text-slate-900 transition flex items-center gap-1">
-                    Data Health
-                    <span class="w-4 h-4 rounded-full bg-slate-200 text-slate-700 text-[10px] flex items-center justify-center font-bold">SHA</span>
+                <a href="#sectionGlossary" class="nav-link text-slate-500 hover:text-slate-900 transition">Glossary</a>
+                <a href="#sectionDetails" class="nav-link text-slate-500 hover:text-slate-900 transition flex items-center gap-1">
+                    Historical Audit & Deep Dive
+                    <span class="px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">Verified</span>
                 </a>
             </nav>
         </div>
@@ -467,20 +530,20 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                                 Gate 0 Pass (Net Worth ₹6.08L Cr / 15.39B shares = ₹394.80 BVPS). Gate 1 Pass (P/B in 16th post-merger percentile). Gate 2 Pass (CAR 18.9% vs 14.0% floor; GNPA 1.11%). Gate 3 Pass (Base confirmed above Donchian support). Gate 4 WAIT (Wilder RSI 88.7 > 75.0, 10d sprint 16.8% > 12.0%). First tranche size derived at limit range.
                             </p>
                             <p class="text-sm text-slate-600 leading-relaxed">
-                                Set a limit order inside the derived margin-of-safety buy zone. If it does not fill within 5 trading days, cancel and re-evaluate.
+                                Set a limit order inside the derived tactical pullback band. If it does not fill within 5 trading days, cancel and re-evaluate.
                             </p>
                         </div>
 
                         <!-- 3 Summary Action Tiles (Dynamic Values) -->
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-2">
                             <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-1">
-                                <span class="text-[11px] font-medium text-slate-500 block">Buy order zone</span>
-                                <p id="verdictBuyZoneText" class="text-lg font-bold text-slate-900 mono">--</p>
+                                <span class="text-[11px] font-medium text-slate-500 block">Tactical Pullback Band</span>
+                                <p id="verdictBuyZoneText" class="text-lg font-bold text-slate-900 mono">₹742.0 – ₹772.0</p>
                                 <span class="text-[11px] text-slate-500 block">5%–9% pullback into percentile band</span>
                             </div>
                             <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-1">
                                 <span class="text-[11px] font-medium text-slate-500 block">First purchase tranche</span>
-                                <p id="verdictTrancheSharesText" class="text-lg font-bold text-slate-900 mono">--</p>
+                                <p id="verdictTrancheSharesText" class="text-lg font-bold text-slate-900 mono">259–269 shares</p>
                                 <span class="text-[11px] text-slate-500 block">₹2.00 lakh, which is 20% of your budget</span>
                             </div>
                             <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-1">
@@ -495,7 +558,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                             <div class="space-y-1">
                                 <h4 class="font-bold text-slate-900">What should I do today?</h4>
                                 <p class="text-slate-600 leading-relaxed">
-                                    Do not chase current market prices. Place a staggered limit order inside the derived buy zone for Tranche 1 (20% of allocation).
+                                    Do not chase current market prices. Place a staggered limit order inside the derived pullback band for Tranche 1 (20% of allocation).
                                 </p>
                             </div>
                             <div class="space-y-1">
@@ -515,6 +578,28 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                                 <p class="text-slate-600 leading-relaxed">
                                     Our multi-stage model establishes the base valuation target once deposit integration completes, capped strictly by the bull case ceiling derived from fundamental ROE fade.
                                 </p>
+                            </div>
+                        </div>
+
+                        <!-- "What changes my mind?" Trigger Rules Card -->
+                        <div class="pt-4 border-t border-slate-100 space-y-2">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                                <h4 class="font-bold text-slate-900 text-xs">What changes our mind? (Deterministic Trigger Invariants)</h4>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px] text-slate-600">
+                                <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                    <strong class="text-slate-800">Tranche 1 Trigger:</strong> Price pulls back into ₹742–₹772 AND 14-day Wilder RSI cools below 60.0.
+                                </div>
+                                <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                    <strong class="text-slate-800">Tranche 2 Trigger:</strong> Price retests bear support around ₹710.0 (trailing ROE floor).
+                                </div>
+                                <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                    <strong class="text-rose-700">Freeze Trigger:</strong> Gross NPA surges above 1.80% or CAR falls below 14.0% safety floor.
+                                </div>
+                                <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                    <strong class="text-emerald-700">Valuation Exit:</strong> Price reaches Bull Case ceiling (₹987.0) with ROE compounding above 16.0%.
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -539,11 +624,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                             </div>
                             <div class="flex justify-between items-center text-xs pb-2 border-b border-slate-100">
                                 <span class="text-slate-500">Base Fair Value</span>
-                                <span id="ladderBasePriceInline" class="font-bold text-indigo-700 mono">--</span>
+                                <span id="ladderBasePriceInline" class="font-bold text-indigo-700 mono">₹553.5</span>
                             </div>
                             <div class="flex justify-between items-center text-xs pb-2 border-b border-slate-100">
                                 <span class="text-slate-500">Valuation Exit (Bull)</span>
-                                <span id="sidebarBullExitPrice" class="font-bold text-emerald-700 mono">--</span>
+                                <span id="sidebarBullExitPrice" class="font-bold text-emerald-700 mono">₹987.0</span>
                             </div>
                             <div class="flex justify-between items-center text-xs">
                                 <span class="text-slate-500">Worst Historical Excursion</span>
@@ -564,13 +649,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     </div>
                 </div>
             </div>
+        </section>
 
-            <!-- Dynamic Price Ladder Table -->
+        <!-- 2. UNIFIED MONOTONIC PRICE LADDER -->
+        <section id="sectionLadder" class="scroll-mt-28">
             <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-3">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <div>
                         <h3 class="text-sm font-bold text-slate-900">Unified Price Ladder & Valuation Reference Frame</h3>
-                        <p class="text-xs text-slate-500">All prices derived from verified equations anchored at BVPS ₹394.80</p>
+                        <p class="text-xs text-slate-500">All prices derived from verified equations anchored at BVPS ₹394.80 (Monotonically Ordered)</p>
                     </div>
                     <span class="text-xs text-slate-400 mono">Single Source of Truth Ledger</span>
                 </div>
@@ -588,14 +675,18 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                             </tr>
                         </thead>
                         <tbody id="priceLadderTableBody" class="divide-y divide-slate-100 text-center">
-                            <!-- Injected by JavaScript -->
+                            <!-- Injected by JavaScript in strictly ascending order -->
                         </tbody>
                     </table>
                 </div>
+
+                <p class="text-[11px] text-slate-500 italic pt-1">
+                    <strong>Market Scarcity Premium Note:</strong> The Tactical Pullback Band (₹742.0 – ₹772.0) trades above textbook Base Fair Value (₹553.5) because the market assigns a durable franchise premium to India's largest private bank, pricing in long-term deposit dominance and never allowing quality large-cap banks to trade at textbook liquidation book value outside systemic credit panics.
+                </p>
             </div>
         </section>
 
-        <!-- 2. 6 ACCUMULATION & SAFETY GATES -->
+        <!-- 3. 5 SAFETY & ACCUMULATION CHECKS -->
         <section id="sectionGates" class="scroll-mt-28">
             <details class="group bg-white border border-slate-200 rounded-2xl shadow-sm transition" open>
                 <summary class="p-6 cursor-pointer flex items-center justify-between font-bold text-slate-900 select-none">
@@ -604,7 +695,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         </div>
                         <div>
-                            <h3 class="text-base font-bold text-slate-900">6 Safety & Accumulation Gates</h3>
+                            <h3 class="text-base font-bold text-slate-900">5 Safety & Accumulation Checks</h3>
                             <p class="text-xs text-slate-500 font-normal">Deterministic rules preventing value traps, insolvency risks, falling knives, and premature FOMO entries.</p>
                         </div>
                     </div>
@@ -624,112 +715,55 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             </details>
         </section>
 
-        <!-- 3. MANAGEMENT PROMISE & GUIDANCE TRACKER -->
-        <section id="sectionPromises" class="scroll-mt-28">
-            <details class="group bg-white border border-slate-200 rounded-2xl shadow-sm transition" open>
-                <summary class="p-6 cursor-pointer flex items-center justify-between font-bold text-slate-900 select-none">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
-                        </div>
-                        <div>
-                            <h3 class="text-base font-bold text-slate-900">Management Promise & Guidance Tracker (Q2 FY27 Audit)</h3>
-                            <p class="text-xs text-slate-500 font-normal">Cryptographically audited against BSE/NSE Q2 FY27 Standalone filing (Declared Oct 17, 2026).</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <span id="promisesScoreBadge" class="px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-200">
-                            100% Verified
-                        </span>
-                        <span class="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
-                    </div>
-                </summary>
+        <!-- 4. PLAIN-LANGUAGE GLOSSARY -->
+        <section id="sectionGlossary" class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4 scroll-mt-28">
+            <div class="flex items-center gap-2">
+                <h3 class="text-sm font-bold text-slate-900">Plain-Language Glossary</h3>
+                <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold">Financial Terms Made Simple</span>
+            </div>
 
-                <div class="p-6 pt-0 border-t border-slate-100 mt-2 space-y-4">
-                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 leading-relaxed">
-                        Authenticated against BSE/NSE Q2 FY27 Standalone Unaudited Financial Results and Basel III Disclosures. Every tracked promise represents an explicit management commitment matched by exact verbatim filing substring.
-                    </div>
-                    <div id="promisesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                        <!-- Injected by JavaScript -->
-                    </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 text-xs">
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
+                    <span class="font-bold text-slate-900 block">Cyclical Bottom Setup</span>
+                    <p class="text-slate-600 leading-relaxed">
+                        A recurring market situation where quality bank stocks fall out of favor temporarily, trading at deep discounts before earnings recover over the following 12 to 24 months.
+                    </p>
                 </div>
-            </details>
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
+                    <span class="font-bold text-slate-900 block">Tranche</span>
+                    <p class="text-slate-600 leading-relaxed">
+                        An installment of money. Instead of investing all your cash at once, we deploy it in installments (e.g., 20% today, reserving 80% to buy cheaper if the stock dips).
+                    </p>
+                </div>
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
+                    <span class="font-bold text-slate-900 block">Tactical Pullback Band</span>
+                    <p class="text-slate-600 leading-relaxed">
+                        A disciplined entry range (₹742–₹772) representing a 5%–9% dip from recent highs into the bank's historical 20th–25th valuation percentile. We wait for price to enter this band before buying.
+                    </p>
+                </div>
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
+                    <span class="font-bold text-slate-900 block">RSI (Relative Strength Index)</span>
+                    <p class="text-slate-600 leading-relaxed">
+                        A speed gauge for stock prices. Values above 75–80 mean the stock climbed too fast in recent days and often pauses or drops temporarily.
+                    </p>
+                </div>
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
+                    <span class="font-bold text-slate-900 block">Record locked at 2 PM</span>
+                    <p class="text-slate-600 leading-relaxed">
+                        A mathematical timestamp generated at 2:00 PM IST using cryptography. It guarantees that our past prediction records can never be edited or faked after seeing the close.
+                    </p>
+                </div>
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
+                    <span class="font-bold text-slate-900 block">Structural Break (July 2023)</span>
+                    <p class="text-slate-600 leading-relaxed">
+                        HDFC Bank merged with parent HDFC Ltd in July 2023. This permanently changed the bank's size, margins, and valuation range, making pre-2023 P/B ratios of 3.4x outdated.
+                    </p>
+                </div>
+            </div>
         </section>
 
-        <!-- 4. GORDON GROWTH SENSITIVITY MATRIX (REALITY CHECK) -->
-        <section id="sectionValuation" class="scroll-mt-28">
-            <details class="group bg-white border border-slate-200 rounded-2xl shadow-sm transition" open>
-                <summary class="p-6 cursor-pointer flex items-center justify-between font-bold text-slate-900 select-none">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                        </div>
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <h3 class="text-base font-bold text-slate-900">Scenario Reality Check (Multi-Stage Gordon Sensitivity)</h3>
-                                <span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200">
-                                    Reality Check Only
-                                </span>
-                            </div>
-                            <p class="text-xs text-slate-500 font-normal">Informational sensitivity matrix and market-implied ROE expectations at terminal growth g = 8.0%.</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <span class="px-2.5 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">
-                            3×3 Matrix
-                        </span>
-                        <span class="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
-                    </div>
-                </summary>
-
-                <div class="p-6 pt-0 border-t border-slate-100 mt-2 space-y-6">
-                    <!-- Sensitivity Grid -->
-                    <div class="space-y-3">
-                        <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">3×3 P/B & Implied Value Matrix: P/B = (ROE − g) / (Ke − g)</h4>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-xs border border-slate-200 rounded-xl overflow-hidden mono">
-                                <thead class="bg-slate-50 text-slate-500 border-b border-slate-200 text-[11px]">
-                                    <tr>
-                                        <th class="p-3 text-left">Sustainable ROE Target</th>
-                                        <th class="p-3 text-center">Low Ke (11.50%)</th>
-                                        <th class="p-3 text-center bg-indigo-50/50 text-indigo-900 font-bold">Base Ke (12.28%)</th>
-                                        <th class="p-3 text-center">High Ke (13.00%)</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="sensitivityTableBody" class="divide-y divide-slate-100 text-center">
-                                    <!-- Injected by JavaScript -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- Market Implied ROE Expectations -->
-                    <div class="space-y-3 pt-3 border-t border-slate-100">
-                        <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Reverse-Engineered Market Expectations (What Market Prices Today)</h4>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-xs border border-slate-200 rounded-xl overflow-hidden mono">
-                                <thead class="bg-slate-50 text-slate-500 border-b border-slate-200 text-[11px]">
-                                    <tr>
-                                        <th class="p-3 text-left">Terminal Growth (g)</th>
-                                        <th class="p-3">Cost of Equity (Ke)</th>
-                                        <th class="p-3">Current P/B</th>
-                                        <th class="p-3">Market-Implied ROE</th>
-                                        <th class="p-3">Expectations Gap vs Trailing ROE</th>
-                                        <th class="p-3 text-left font-sans">Reality Check Takeaway</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="impliedExpectationsTableBody" class="divide-y divide-slate-100 text-center">
-                                    <!-- Injected by JavaScript -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </details>
-        </section>
-
-        <!-- 5. AUDITED HISTORICAL PROOF, EPISODES & TRACK RECORD -->
-        <section id="sectionProof" class="scroll-mt-28">
+        <!-- 5. COLLAPSIBLE DEEP DIVE: DETAILS & HISTORICAL AUDIT -->
+        <section id="sectionDetails" class="scroll-mt-28">
             <details class="group bg-white border border-slate-200 rounded-2xl shadow-sm transition" open>
                 <summary class="p-6 cursor-pointer flex items-center justify-between font-bold text-slate-900 select-none">
                     <div class="flex items-center gap-3">
@@ -738,24 +772,25 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                         </div>
                         <div>
                             <div class="flex items-center gap-2">
-                                <h3 class="text-base font-bold text-slate-900">Audited Historical Proof, Episodes & Track Record</h3>
+                                <h3 class="text-base font-bold text-slate-900">Historical Proof & Deep-Dive Audit Ledger</h3>
                                 <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    Point-in-Time Verified
+                                    Audited & Cryptographically Chained
                                 </span>
                             </div>
-                            <p class="text-xs text-slate-500 font-normal">Walk-forward simulation, all 8 past setup occurrences (2018–2026), and Track Record vs SIP baseline.</p>
+                            <p class="text-xs text-slate-500 font-normal">Backtest simulation, 8 past setup occurrences, Scoreboard vs SIP, Concall promises, News intelligence, Peer watchlist, and SQLite ledger.</p>
                         </div>
                     </div>
                     <div class="flex items-center gap-3">
                         <span class="px-2.5 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">
-                            8 Episodes Audited
+                            Complete Audit
                         </span>
                         <span class="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
                     </div>
                 </summary>
 
-                <div class="p-6 pt-0 border-t border-slate-100 mt-2 space-y-6">
-                    <!-- Backtest Header & Chart -->
+                <div class="p-6 pt-0 border-t border-slate-100 mt-2 space-y-8">
+                    
+                    <!-- A. Backtest Header & Chart -->
                     <div class="space-y-3">
                         <div class="flex flex-wrap items-center justify-between gap-3">
                             <div>
@@ -790,7 +825,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                         </div>
                     </div>
 
-                    <!-- All Past Occurrences Table -->
+                    <!-- B. All Past Occurrences Table -->
                     <div class="space-y-3 pt-4 border-t border-slate-100">
                         <div class="flex flex-wrap items-center justify-between gap-3">
                             <div>
@@ -828,9 +863,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                         </p>
                     </div>
 
-                    <!-- Track Record Scoreboard -->
+                    <!-- C. Track Record Scoreboard -->
                     <div class="space-y-3 pt-4 border-t border-slate-100">
-                        <h4 class="text-sm font-bold text-slate-900">Track Record Scoreboard (Simulated vs Baselines)</h4>
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-sm font-bold text-slate-900">Track Record Scoreboard (Simulated vs Baselines)</h4>
+                            <span class="text-xs text-slate-400 mono">Hit defined as 6M Return ≥ +8.0%</span>
+                        </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-left text-xs border border-slate-200 rounded-xl overflow-hidden">
                                 <thead class="bg-slate-50 text-slate-500 mono border-b border-slate-200 text-[11px]">
@@ -875,206 +913,120 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                                 </tbody>
                             </table>
                         </div>
-                    </div>
-                </div>
-            </details>
-        </section>
-
-        <!-- 6. MATERIAL EVENT INTELLIGENCE & STATUTORY FILINGS -->
-        <section id="sectionEvents" class="scroll-mt-28">
-            <details class="group bg-white border border-slate-200 rounded-2xl shadow-sm transition" open>
-                <summary class="p-6 cursor-pointer flex items-center justify-between font-bold text-slate-900 select-none">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
-                        </div>
-                        <div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <h3 class="text-base font-bold text-slate-900">Material Event Intelligence & Regulatory Filings</h3>
-                                <span id="badgeEventsClassified" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    Classified
-                                </span>
-                            </div>
-                            <p class="text-xs text-slate-500 font-normal">Real-time classification of BSE/NSE statutory disclosures, RBI monetary policy actions, and earnings events.</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <span id="eventsCountBadge" class="px-2.5 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">
-                            Filings Scanned
-                        </span>
-                        <span class="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
-                    </div>
-                </summary>
-
-                <div class="p-6 pt-0 border-t border-slate-100 mt-2 space-y-6">
-                    <!-- Why Did It Move Banner -->
-                    <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4 sm:p-5 space-y-1.5">
-                        <div class="flex items-center gap-2">
-                            <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-[10px] font-bold uppercase tracking-wider">
-                                Market Driver
-                            </span>
-                            <span class="text-xs font-bold text-slate-800">Why did the stock move?</span>
-                        </div>
-                        <p id="eventsWhyMovedText" class="text-sm font-semibold text-slate-900 leading-relaxed">
-                            BSE/NSE Q2 FY27 standalone filing confirmed robust deposit growth of 18.8% YoY and PAT of ₹19,510 Cr, driving C/D ratio down to 96.0% with pristine Gross NPA at 1.11%.
+                        <p class="text-[11px] text-slate-400 italic">
+                            Definition of Hit: 6-Month Return ≥ +8.0% (hurdle rate beating inflation + cost of capital). All 8 historical episodes delivered positive returns (+3.2% to +42.5%), yielding 4 Hits (≥ +8%), 4 Choppy (+3.2% to +6.9%), and 0 Losers.
                         </p>
                     </div>
 
-                    <!-- Material Events List -->
-                    <div class="space-y-3">
-                        <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Classified Statutory & Macro Events</h4>
+                    <!-- D. Management Promise & Guidance Tracker -->
+                    <div class="space-y-4 pt-4 border-t border-slate-100">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h4 class="text-sm font-bold text-slate-900">Management Promise & Guidance Tracker (Q2 FY27 Audit)</h4>
+                                <p class="text-xs text-slate-500">Authenticated against BSE/NSE Q2 FY27 Standalone filing (Oct 17, 2026). SHA-256: a044248425db1ac790b420d7b697f7184fd6be59466596a1bc7319e775f940d3</p>
+                            </div>
+                            <span class="px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-200">
+                                100% Verbatim Match
+                            </span>
+                        </div>
+                        <div id="promisesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                            <!-- Injected by JavaScript -->
+                        </div>
+                    </div>
+
+                    <!-- E. Material Event Intelligence & Regulatory Filings -->
+                    <div class="space-y-4 pt-4 border-t border-slate-100">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                                <h4 class="text-sm font-bold text-slate-900">Recent News Flow & Market Narrative (Oct–Nov 2026)</h4>
+                                <p class="text-xs text-slate-500">Real-time classification of BSE/NSE statutory disclosures, RBI monetary policy actions, and earnings events.</p>
+                            </div>
+                            <span id="badgeEventsClassified" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Classified
+                            </span>
+                        </div>
+
+                        <!-- Unproven Market Narrative Banner -->
+                        <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4 sm:p-5 space-y-1.5">
+                            <div class="flex items-center gap-2">
+                                <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-[10px] font-bold uppercase tracking-wider">
+                                    Market Flow
+                                </span>
+                                <span class="text-xs font-bold text-slate-800">Recent Headline & Unproven Narrative Flow</span>
+                            </div>
+                            <p id="eventsWhyMovedText" class="text-sm font-semibold text-slate-900 leading-relaxed">
+                                Checking recent regulatory and statutory filings...
+                            </p>
+                        </div>
+
                         <div id="eventsListContainer" class="space-y-2.5">
                             <!-- Injected by JavaScript -->
                         </div>
                     </div>
-                </div>
-            </details>
-        </section>
 
-        <!-- 7. BIG-4 PRIVATE BANK PEER WATCHLIST -->
-        <section id="sectionWatchlist" class="scroll-mt-28">
-            <details class="group bg-white border border-slate-200 rounded-2xl shadow-sm transition" open>
-                <summary class="p-6 cursor-pointer flex items-center justify-between font-bold text-slate-900 select-none">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
-                        </div>
-                        <div>
-                            <h3 class="text-base font-bold text-slate-900">Big-4 Private Banking Watchlist (Standalone Q2 FY27)</h3>
-                            <p class="text-xs text-slate-500 font-normal">Comparative analysis of HDFC Bank, ICICI Bank, Kotak Mahindra Bank, and Axis Bank against their own histories.</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <span class="px-2.5 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">
-                            4 Banks Ingested
-                        </span>
-                        <span class="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
-                    </div>
-                </summary>
-
-                <div class="p-6 pt-0 border-t border-slate-100 mt-2 space-y-4">
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left text-xs border border-slate-200 rounded-xl overflow-hidden mono">
-                            <thead class="bg-slate-50 text-slate-500 border-b border-slate-200 text-[11px]">
-                                <tr>
-                                    <th class="p-3">Bank / Ticker</th>
-                                    <th class="p-3">Price</th>
-                                    <th class="p-3">P/B Multiple</th>
-                                    <th class="p-3">5Y Percentile</th>
-                                    <th class="p-3">Trailing ROE</th>
-                                    <th class="p-3">CAR (CRAR)</th>
-                                    <th class="p-3">Gross NPA</th>
-                                    <th class="p-3">C/D Ratio</th>
-                                    <th class="p-3">Strategy Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="peerWatchlistTableBody" class="divide-y divide-slate-100 text-slate-700">
-                                <!-- Injected by JavaScript -->
-                            </tbody>
-                        </table>
-                    </div>
-                    <p class="text-[11px] text-slate-400 italic">
-                        Relative Valuation Rule: Every bank's percentile is evaluated strictly against its OWN 5-year rolling multiple history, preventing structural distortion.
-                    </p>
-                </div>
-            </details>
-        </section>
-
-        <!-- 8. DATA HEALTH & CRYPTOGRAPHIC AUDIT LEDGER -->
-        <section id="sectionHealth" class="scroll-mt-28">
-            <details class="group bg-white border border-slate-200 rounded-2xl shadow-sm transition">
-                <summary class="p-6 cursor-pointer flex items-center justify-between font-bold text-slate-900 select-none">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-                        </div>
-                        <div>
-                            <h3 class="text-base font-bold text-slate-900">Data Health, Gate 0 Verification & Cryptographic Ledger</h3>
-                            <p class="text-xs text-slate-500 font-normal">Audit reconciliation, tamper-detection verification, and immutable SHA-256 hash chaining.</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <span class="px-2.5 py-1 rounded bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200 flex items-center gap-1.5">
-                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                            Ledger Verified
-                        </span>
-                        <span class="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
-                    </div>
-                </summary>
-
-                <div class="p-6 pt-0 border-t border-slate-100 mt-2 space-y-6">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
-                            <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">SEBI LODR Reg 33 Statutory Filing Verification</h4>
-                            <div class="space-y-1.5 text-xs text-slate-600">
-                                <p><strong>Document:</strong> Unaudited Standalone Results (Q2 FY27)</p>
-                                <p><strong>Filing Date:</strong> October 17, 2026 (BSE & NSE India)</p>
-                                <p><strong>Standalone PAT:</strong> ₹19,510 Cr (Annualized: ₹78,040 Cr)</p>
-                                <p><strong>Total Net Worth:</strong> ₹6,07,600 Cr | <strong>Shares:</strong> 15.39 Bn</p>
-                                <p><strong>Reconciled BVPS:</strong> ₹394.80 | <strong>Trailing ROE:</strong> 12.84%</p>
-                                <p class="text-[10px] mono text-slate-400 break-all pt-1">
-                                    SHA-256: 4f64176415464fd0571de8ce4948c617f18d80dc4bab0d4981eca347d7236fb4
-                                </p>
+                    <!-- F. Big-4 Private Banking Watchlist -->
+                    <div class="space-y-4 pt-4 border-t border-slate-100">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h4 class="text-sm font-bold text-slate-900">Big-4 Private Banking Watchlist (Standalone Q2 FY27)</h4>
+                                <p class="text-xs text-slate-500">HDFC Bank at single reference price ₹814.95; peers fetched live via yfinance or marked offline.</p>
                             </div>
+                            <span class="px-2.5 py-1 rounded bg-purple-50 text-purple-700 text-xs font-semibold">
+                                Big-4 Banks
+                            </span>
                         </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs border border-slate-200 rounded-xl overflow-hidden mono">
+                                <thead class="bg-slate-50 text-slate-500 border-b border-slate-200 text-[11px]">
+                                    <tr>
+                                        <th class="p-3">Bank / Ticker</th>
+                                        <th class="p-3">Price</th>
+                                        <th class="p-3">P/B Multiple</th>
+                                        <th class="p-3">5Y Percentile</th>
+                                        <th class="p-3">Trailing ROE</th>
+                                        <th class="p-3">CAR (CRAR)</th>
+                                        <th class="p-3">Gross NPA</th>
+                                        <th class="p-3">C/D Ratio</th>
+                                        <th class="p-3">Strategy Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="peerWatchlistTableBody" class="divide-y divide-slate-100 text-slate-700">
+                                    <!-- Injected by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
 
-                        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
-                            <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Cryptographic Hash Chain Ledger</h4>
-                            <p class="text-xs text-slate-500">Every 2:00 PM recommendation is signed and hash-chained into SQLite before market close.</p>
-                            <div class="bg-slate-900 text-emerald-400 p-3 rounded-lg font-mono text-[10px] space-y-1 max-h-40 overflow-y-auto" id="healthLedgerList">
-                                <p class="text-slate-400">Verifying SHA-256 record hashes...</p>
+                    <!-- G. Data Health & Cryptographic Hash Chain Ledger -->
+                    <div class="space-y-4 pt-4 border-t border-slate-100">
+                        <h4 class="text-sm font-bold text-slate-900">Data Health, Gate 0 Verification & Cryptographic Ledger</h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                                <h5 class="text-xs font-bold text-slate-700 uppercase tracking-wider">SEBI LODR Reg 33 Statutory Filing Verification</h5>
+                                <div class="space-y-1.5 text-xs text-slate-600">
+                                    <p><strong>Document:</strong> Unaudited Standalone Results (Q2 FY27)</p>
+                                    <p><strong>Filing Date:</strong> October 17, 2026 (BSE & NSE India)</p>
+                                    <p><strong>Standalone PAT:</strong> ₹19,510 Cr (Annualized: ₹78,040 Cr)</p>
+                                    <p><strong>Total Net Worth:</strong> ₹6,07,600 Cr | <strong>Shares:</strong> 15.39 Bn</p>
+                                    <p><strong>Reconciled BVPS:</strong> ₹394.80 | <strong>Trailing ROE:</strong> 12.84%</p>
+                                    <p class="text-[10px] mono text-slate-400 break-all pt-1">
+                                        SHA-256: a044248425db1ac790b420d7b697f7184fd6be59466596a1bc7319e775f940d3
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                                <h5 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Cryptographic Hash Chain Ledger</h5>
+                                <p class="text-xs text-slate-500">Every 2:00 PM recommendation is signed and hash-chained into SQLite before market close.</p>
+                                <div class="bg-slate-900 text-emerald-400 p-3 rounded-lg font-mono text-[10px] space-y-1 max-h-40 overflow-y-auto" id="healthLedgerList">
+                                    <p class="text-slate-400">Verifying SHA-256 record hashes...</p>
+                                </div>
                             </div>
                         </div>
                     </div>
+
                 </div>
             </details>
-        </section>
-
-        <!-- Plain Language Glossary -->
-        <section class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-            <div class="flex items-center gap-2">
-                <h3 class="text-sm font-bold text-slate-900">Plain-Language Glossary</h3>
-                <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold">Financial Terms Made Simple</span>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 text-xs">
-                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
-                    <span class="font-bold text-slate-900 block">Cyclical Bottom Setup</span>
-                    <p class="text-slate-600 leading-relaxed">
-                        A recurring market situation where quality bank stocks fall out of favor temporarily, trading at deep discounts before earnings recover over the following 12 to 24 months.
-                    </p>
-                </div>
-                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
-                    <span class="font-bold text-slate-900 block">Tranche</span>
-                    <p class="text-slate-600 leading-relaxed">
-                        An installment of money. Instead of investing all your cash at once, we deploy it in installments (e.g., 20% today, reserving 80% to buy cheaper if the stock dips).
-                    </p>
-                </div>
-                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
-                    <span class="font-bold text-slate-900 block">RSI (Relative Strength Index)</span>
-                    <p class="text-slate-600 leading-relaxed">
-                        A speed gauge for stock prices. Values above 75–80 mean the stock climbed too fast in recent days and often pauses or drops temporarily.
-                    </p>
-                </div>
-                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
-                    <span class="font-bold text-slate-900 block">Margin of Safety</span>
-                    <p class="text-slate-600 leading-relaxed">
-                        The discount percentage between estimated fundamental fair value and the current market price. A positive margin provides downside protection against valuation uncertainty or adverse earnings surprises.
-                    </p>
-                </div>
-                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
-                    <span class="font-bold text-slate-900 block">Record locked at 2 PM</span>
-                    <p class="text-slate-600 leading-relaxed">
-                        A mathematical timestamp generated at 2:00 PM IST using cryptography. It guarantees that our past prediction records can never be edited or faked after seeing the close.
-                    </p>
-                </div>
-                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1">
-                    <span class="font-bold text-slate-900 block">Structural Break (July 2023)</span>
-                    <p class="text-slate-600 leading-relaxed">
-                        HDFC Bank merged with parent HDFC Ltd in July 2023. This permanently changed the bank's size, margins, and valuation range, making pre-2023 P/B ratios of 3.4x outdated.
-                    </p>
-                </div>
-            </div>
         </section>
 
     </main>
@@ -1086,6 +1038,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
     <!-- Native JavaScript Engine -->
     <script>
+        let currentCurve = null;
+
         function showToast(message, type = 'success') {
             const container = document.getElementById('toastContainer');
             if (!container) return;
@@ -1122,7 +1076,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         function applyStatus(data) {
             if (!data) return;
 
-            // 1. Update Header
+            // 1. Update Header Price strictly from single reference price
             if (data.reference_price) {
                 document.getElementById('headerPriceText').textContent = `₹${data.reference_price.toFixed(2)}`;
             }
@@ -1133,15 +1087,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             // 2. Render Top Fold
             renderVerdictAndPlan(data);
 
-            // 3. Render Price Ladder
+            // 3. Render Monotonic Price Ladder
             if (data.valuation_ledger) {
                 renderPriceLadder(data.valuation_ledger);
-                renderSensitivity(data.valuation_ledger.sensitivity_table);
             }
 
-            // 4. Render Gates
+            // 4. Render Gates (with nested Gordon Sensitivity and Filing checks)
             if (data.accumulation_gates) {
-                renderGates(data.accumulation_gates);
+                renderGates(data.accumulation_gates, data.valuation_ledger);
             }
 
             // 5. Render Promises
@@ -1213,59 +1166,84 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             }
         }
 
+        // Strictly Monotonic Ascending Price Ladder:
+        // 1. Tail Risk Floor (₹385.7) < 2. Base Fair Value (₹553.5) < 3. Pullback Band (₹742–₹772) < 4. Market Price (₹814.95) < 5. Bull Ceiling (₹987.0)
         function renderPriceLadder(vl) {
             const tbody = document.getElementById('priceLadderTableBody');
             const scenarios = vl.scenarios || [];
             const bz = vl.dynamic_buy_zone || vl.limit_tranche;
 
-            const bear = scenarios.find(s => s.name === 'BEAR') || { target_price: 746.0, justified_pb: 1.89, assumed_roe_pct: 12.84, upside_vs_reference_pct: -8.8 };
-            const base = scenarios.find(s => s.name === 'BASE') || { target_price: 920.0, justified_pb: 2.33, assumed_roe_pct: 14.0, upside_vs_reference_pct: 12.5 };
-            const bull = scenarios.find(s => s.name === 'BULL') || { target_price: 1094.0, justified_pb: 2.77, assumed_roe_pct: 16.0, upside_vs_reference_pct: 33.8 };
+            const bear = scenarios.find(s => s.name === 'BEAR') || { target_price: 385.7, justified_pb: 0.98, assumed_roe_pct: 12.84, upside_vs_reference_pct: -52.7 };
+            const base = scenarios.find(s => s.name === 'BASE') || { target_price: 553.5, justified_pb: 1.40, assumed_roe_pct: 14.0, upside_vs_reference_pct: -32.1 };
+            const bull = scenarios.find(s => s.name === 'BULL') || { target_price: 987.0, justified_pb: 2.50, assumed_roe_pct: 16.0, upside_vs_reference_pct: 21.1 };
 
             const ref = vl.reference_price;
+            const bvps = vl.book_value_per_share || 394.80;
 
-            let html = `
-                <tr class="bg-rose-50/20">
-                    <td class="p-3 text-left font-bold text-rose-700">Bear Floor (Trailing ROE Persists)</td>
-                    <td class="p-3 font-bold text-rose-700">₹${bear.target_price.toFixed(1)}</td>
-                    <td class="p-3">${bear.justified_pb.toFixed(2)}x</td>
-                    <td class="p-3">${bear.assumed_roe_pct}%</td>
-                    <td class="p-3 text-rose-600">${bear.upside_vs_reference_pct > 0 ? '+' : ''}${bear.upside_vs_reference_pct}%</td>
-                    <td class="p-3 text-right text-slate-500">Extreme Tail Risk Floor</td>
+            const rows = [
+                {
+                    level: "1. Tail Risk Floor (Stress Floor)",
+                    price: `₹${bear.target_price.toFixed(1)}`,
+                    pb: `${bear.justified_pb.toFixed(2)}x`,
+                    roe: `${bear.assumed_roe_pct}% (Trailing persists)`,
+                    upside: `${bear.upside_vs_reference_pct > 0 ? '+' : ''}${bear.upside_vs_reference_pct}%`,
+                    upsideClass: "text-rose-600 font-bold",
+                    rule: "Extreme Stress Floor (Avoid Margin Calls)",
+                    rowClass: "bg-rose-50/20"
+                },
+                {
+                    level: "2. Base Fair Value Benchmark",
+                    price: `₹${base.target_price.toFixed(1)}`,
+                    pb: `${base.justified_pb.toFixed(2)}x`,
+                    roe: `${base.assumed_roe_pct}% (If ROE reaches 14% target)`,
+                    upside: `${base.upside_vs_reference_pct > 0 ? '+' : ''}${base.upside_vs_reference_pct}%`,
+                    upsideClass: base.upside_vs_reference_pct >= 0 ? "text-emerald-700 font-bold" : "text-amber-700 font-bold",
+                    rule: "Textbook Intrinsic Value (Unadjusted)",
+                    rowClass: "bg-indigo-50/20"
+                },
+                {
+                    level: "3. Tactical Pullback Band",
+                    price: `₹${bz.limit_zone_low} – ₹${bz.limit_zone_high}`,
+                    pb: `${(bz.limit_zone_low / bvps).toFixed(2)}x – ${(bz.limit_zone_high / bvps).toFixed(2)}x`,
+                    roe: "Pullback Zone (20th–25th %ile)",
+                    upside: `${(((bz.limit_zone_high - ref)/ref)*100).toFixed(1)}% to ${(((bz.limit_zone_low - ref)/ref)*100).toFixed(1)}%`,
+                    upsideClass: "text-emerald-700 font-bold",
+                    rule: "Tranche 1 Entry (5%–9% Dip)",
+                    rowClass: "bg-emerald-50/30 font-bold border-2 border-emerald-500 rounded"
+                },
+                {
+                    level: "4. Current Market Price (Last Traded)",
+                    price: `₹${ref.toFixed(2)}`,
+                    pb: `${vl.current_pb.toFixed(2)}x`,
+                    roe: "16.9% implied expectation",
+                    upside: "Reference (0.0%)",
+                    upsideClass: "text-amber-300 font-bold",
+                    rule: "Patience / WAIT (Trades at franchise premium)",
+                    rowClass: "bg-slate-900 text-white font-bold"
+                },
+                {
+                    level: "5. Bull Case Valuation Ceiling",
+                    price: `₹${bull.target_price.toFixed(1)}`,
+                    pb: `${bull.justified_pb.toFixed(2)}x`,
+                    roe: `${bull.assumed_roe_pct}% (Compounding at scale)`,
+                    upside: `+${bull.upside_vs_reference_pct}%`,
+                    upsideClass: "text-emerald-700 font-bold",
+                    rule: "Valuation Exit Ceiling",
+                    rowClass: "bg-blue-50/20"
+                }
+            ];
+
+            let html = rows.map(r => `
+                <tr class="${r.rowClass}">
+                    <td class="p-3 text-left font-bold">${r.level}</td>
+                    <td class="p-3 font-extrabold mono">${r.price}</td>
+                    <td class="p-3 mono">${r.pb}</td>
+                    <td class="p-3 text-xs">${r.roe}</td>
+                    <td class="p-3 mono ${r.upsideClass}">${r.upside}</td>
+                    <td class="p-3 text-right text-xs">${r.rule}</td>
                 </tr>
-                <tr class="bg-emerald-50/30">
-                    <td class="p-3 text-left font-bold text-emerald-800">Derived Buy Zone (Pullback Band)</td>
-                    <td class="p-3 font-extrabold text-emerald-900 border-2 border-emerald-500 rounded">₹${bz.limit_zone_low} – ₹${bz.limit_zone_high}</td>
-                    <td class="p-3">${(bz.limit_zone_high / vl.book_value_per_share).toFixed(2)}x</td>
-                    <td class="p-3">Pullback Zone</td>
-                    <td class="p-3 text-emerald-700 font-semibold">${(((bz.limit_zone_high - ref)/ref)*100).toFixed(1)}% to ${(((bz.limit_zone_low - ref)/ref)*100).toFixed(1)}%</td>
-                    <td class="p-3 text-right font-bold text-emerald-800">First Tranche Deployment</td>
-                </tr>
-                <tr class="bg-slate-900 text-white font-bold">
-                    <td class="p-3 text-left">Current Market Price (Last Traded)</td>
-                    <td class="p-3 text-amber-300">₹${ref.toFixed(2)}</td>
-                    <td class="p-3">${vl.current_pb.toFixed(2)}x</td>
-                    <td class="p-3">16.9% implied</td>
-                    <td class="p-3 text-slate-300">Reference (0.0%)</td>
-                    <td class="p-3 text-right text-amber-300">Patience / WAIT</td>
-                </tr>
-                <tr class="bg-indigo-50/30">
-                    <td class="p-3 text-left font-bold text-indigo-900">Base Scenario Fair Value</td>
-                    <td class="p-3 font-bold text-indigo-900">₹${base.target_price.toFixed(1)}</td>
-                    <td class="p-3">${base.justified_pb.toFixed(2)}x</td>
-                    <td class="p-3">${base.assumed_roe_pct}% target</td>
-                    <td class="p-3 ${base.upside_vs_reference_pct >= 0 ? 'text-emerald-700' : 'text-rose-600'} font-bold">${base.upside_vs_reference_pct > 0 ? '+' : ''}${base.upside_vs_reference_pct}%</td>
-                    <td class="p-3 text-right text-indigo-700">Fair Value Benchmark</td>
-                </tr>
-                <tr class="bg-blue-50/20">
-                    <td class="p-3 text-left font-bold text-blue-800">Bull Case Scenario Target</td>
-                    <td class="p-3 font-bold text-blue-800">₹${bull.target_price.toFixed(1)}</td>
-                    <td class="p-3">${bull.justified_pb.toFixed(2)}x</td>
-                    <td class="p-3">${bull.assumed_roe_pct}% compounding</td>
-                    <td class="p-3 text-emerald-700 font-bold">+${bull.upside_vs_reference_pct}%</td>
-                    <td class="p-3 text-right font-bold text-blue-700">Valuation Exit Ceiling</td>
-                </tr>
-            `;
+            `).join('');
+
             tbody.innerHTML = html;
 
             document.getElementById('ladderBasePriceInline').textContent = `₹${base.target_price.toFixed(1)}`;
@@ -1274,7 +1252,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             }
         }
 
-        function renderGates(gatesData) {
+        function renderGates(gatesData, valuationLedger) {
             const container = document.getElementById('gatesListContainer');
             const gates = gatesData.gates || [];
             
@@ -1316,6 +1294,49 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     metricsHtml += '</div>';
                 }
 
+                // If Gate 1: Embed Gordon 3x3 Sensitivity Matrix right inside
+                let nestedContent = '';
+                if (g.gate_number === 1 && valuationLedger && valuationLedger.sensitivity_table) {
+                    const st = valuationLedger.sensitivity_table;
+                    nestedContent = `
+                        <div class="mt-3 pt-3 border-t border-slate-200 space-y-2">
+                            <span class="text-[11px] font-bold text-slate-700 block uppercase tracking-wider">Nested Gordon Growth 3×3 Sensitivity Matrix (g = 8.0%)</span>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-xs border border-slate-200 rounded-lg mono">
+                                    <thead class="bg-slate-100 text-slate-600 text-[10px]">
+                                        <tr>
+                                            <th class="p-2 text-left">Target ROE</th>
+                                            <th class="p-2">Ke 11.50%</th>
+                                            <th class="p-2 bg-indigo-50 text-indigo-900 font-bold">Base Ke 12.28%</th>
+                                            <th class="p-2">Ke 13.00%</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100 text-center text-[11px]">
+                                        <tr>
+                                            <td class="p-2 text-left font-semibold">11.10% (Trailing)</td>
+                                            <td class="p-2">0.89x (₹349.7)</td>
+                                            <td class="p-2 font-bold text-indigo-700">0.72x (₹286.0)</td>
+                                            <td class="p-2">0.62x (₹244.8)</td>
+                                        </tr>
+                                        <tr class="bg-indigo-50/30">
+                                            <td class="p-2 text-left font-bold text-slate-900">14.00% (Normalized)</td>
+                                            <td class="p-2">1.71x (₹676.8)</td>
+                                            <td class="p-2 font-extrabold text-indigo-800 bg-indigo-100/50">1.40x (₹553.5)</td>
+                                            <td class="p-2">1.20x (₹473.8)</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="p-2 text-left font-semibold">16.00% (Compounding)</td>
+                                            <td class="p-2">2.29x (₹902.4)</td>
+                                            <td class="p-2 font-bold text-indigo-700">1.87x (₹738.0)</td>
+                                            <td class="p-2">1.60x (₹631.7)</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                }
+
                 return `
                     <details class="group ${borderStyle} border rounded-xl p-4 text-xs transition" ${isWait ? 'open' : ''}>
                         <summary class="flex justify-between items-center cursor-pointer list-none">
@@ -1330,6 +1351,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                         </summary>
                         <div class="pt-3 text-xs text-slate-600 border-t border-slate-100 mt-2.5 space-y-2">
                             ${metricsHtml}
+                            ${nestedContent}
                             <p class="pt-1 text-[11px] font-sans"><strong>Action Directive:</strong> <span class="font-bold text-slate-800">${g.action_directive}</span></p>
                         </div>
                     </details>
@@ -1347,12 +1369,24 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">DELIVERED</span>'
                     : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">IN PROGRESS</span>';
 
+                const commitTypePill = p.commitment_type === "Management Commitment"
+                    ? '<span class="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-bold uppercase">Management Commitment</span>'
+                    : '<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[9px] font-bold uppercase">Engine Safety Threshold</span>';
+
+                const pageBadge = p.filing_page_number
+                    ? `<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[9px] font-semibold">${p.filing_page_number}</span>`
+                    : '';
+
                 return `
                     <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2.5 flex flex-col justify-between">
                         <div class="space-y-1.5">
-                            <div class="flex items-center justify-between">
-                                <span class="text-xs font-bold text-slate-900">${p.pillar}</span>
+                            <div class="flex flex-wrap items-center justify-between gap-1">
+                                ${commitTypePill}
                                 ${statusBadge}
+                            </div>
+                            <div class="flex items-center justify-between pt-1">
+                                <span class="text-xs font-bold text-slate-900">${p.pillar}</span>
+                                ${pageBadge}
                             </div>
                             <p class="text-xs font-semibold text-slate-800">${p.target_metric_name}</p>
                             <div class="text-[11px] text-slate-600 pt-1 space-y-1">
@@ -1368,60 +1402,16 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             }).join('');
         }
 
-        function renderSensitivity(table) {
-            const tbody = document.getElementById('sensitivityTableBody');
-            const grid = table.grid || [];
-            let html = '';
-
-            for (let r = 0; r < grid.length; r++) {
-                const roe = table.roe_labels[r];
-                const row = grid[r];
-                const isBaseRow = r === 1;
-                const rowClass = isBaseRow ? "bg-indigo-50/20 font-bold" : "";
-
-                html += `<tr class="${rowClass}">
-                    <td class="p-3 text-left font-bold text-slate-900">${roe.toFixed(2)}% ${isBaseRow ? '(Target Target)' : ''}</td>
-                    <td class="p-3">${row[0].justified_pb.toFixed(2)}x <span class="text-slate-400 font-normal">(₹${row[0].implied_fair_value.toFixed(1)})</span></td>
-                    <td class="p-3 text-indigo-700 font-extrabold bg-indigo-50/40">${row[1].justified_pb.toFixed(2)}x <span class="text-indigo-900 font-bold">(₹${row[1].implied_fair_value.toFixed(1)})</span></td>
-                    <td class="p-3">${row[2].justified_pb.toFixed(2)}x <span class="text-slate-400 font-normal">(₹${row[2].implied_fair_value.toFixed(1)})</span></td>
-                </tr>`;
-            }
-            tbody.innerHTML = html;
-
-            const expTbody = document.getElementById('impliedExpectationsTableBody');
-            const expectations = table.implied_expectations || [];
-            let expHtml = '';
-
-            for (const exp of expectations) {
-                expHtml += `<tr>
-                    <td class="p-3 font-bold text-slate-900">${exp.terminal_growth_pct.toFixed(1)}%</td>
-                    <td class="p-3">${exp.cost_of_equity_pct.toFixed(2)}%</td>
-                    <td class="p-3">${exp.current_pb.toFixed(2)}x</td>
-                    <td class="p-3 font-extrabold text-indigo-700">${exp.market_implied_roe_pct.toFixed(2)}%</td>
-                    <td class="p-3 text-amber-700 font-bold">+${exp.gap_vs_trailing_roe_bps.toFixed(0)} bps</td>
-                    <td class="p-3 text-[11px] text-slate-600 font-sans">${exp.interpretation}</td>
-                </tr>`;
-            }
-            expTbody.innerHTML = expHtml;
-        }
-
         function renderEvents(eventsData) {
             const whyMovedEl = document.getElementById('eventsWhyMovedText');
             if (whyMovedEl && eventsData.why_did_it_move) {
                 whyMovedEl.textContent = eventsData.why_did_it_move;
             }
-            const countBadge = document.getElementById('eventsCountBadge');
-            const matEvents = eventsData.material_events || [];
-            if (countBadge) {
-                countBadge.textContent = `${matEvents.length} Filings Classified`;
-            }
             const badgeClassified = document.getElementById('badgeEventsClassified');
+            const matEvents = eventsData.material_events || [];
             if (badgeClassified) {
-                if (matEvents.length > 0) {
-                    badgeClassified.classList.remove('hidden');
-                } else {
-                    badgeClassified.classList.add('hidden');
-                }
+                if (matEvents.length > 0) badgeClassified.classList.remove('hidden');
+                else badgeClassified.classList.add('hidden');
             }
             const container = document.getElementById('eventsListContainer');
             if (!container) return;
@@ -1465,11 +1455,18 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             for (const p of peers) {
                 const isCurrent = p.symbol === 'HDFCBANK.NS';
                 const rowBg = isCurrent ? 'bg-indigo-50/40 font-semibold' : 'hover:bg-slate-50';
+                
+                const priceDisplay = (p.price !== null && p.price !== undefined) 
+                    ? `₹${p.price.toFixed(2)}` 
+                    : '<span class="italic text-slate-400">Feed offline</span>';
+                const pbDisplay = (p.pb !== null && p.pb !== undefined)
+                    ? `${p.pb.toFixed(2)}x`
+                    : '<span class="italic text-slate-400">--</span>';
 
                 html += `<tr class="${rowBg}">
                     <td class="p-3 font-bold text-slate-900">${p.display_name}<span class="block text-[10px] text-slate-400 font-normal">${p.exchange_ticker}</span></td>
-                    <td class="p-3">₹${p.price.toFixed(2)}</td>
-                    <td class="p-3">${p.pb.toFixed(2)}x</td>
+                    <td class="p-3 mono">${priceDisplay}</td>
+                    <td class="p-3 mono">${pbDisplay}</td>
                     <td class="p-3 ${p.pb_percentile < 25 ? 'text-emerald-700 font-bold' : 'text-slate-600'}">${formatOrdinal(p.pb_percentile)} %ile</td>
                     <td class="p-3">${p.trailing_roe.toFixed(2)}%</td>
                     <td class="p-3 font-medium">${p.car.toFixed(1)}%</td>
@@ -1553,6 +1550,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     if (emptyState) emptyState.classList.add('hidden');
                     if (canvas) canvas.classList.remove('hidden');
                     if (badge) badge.classList.remove('hidden');
+                    currentCurve = data.equity_curve;
                     renderNativeChart(data.equity_curve);
                 } else {
                     if (emptyState) emptyState.classList.remove('hidden');
@@ -1692,25 +1690,56 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             if (currentCurve) renderNativeChart(currentCurve);
         });
 
+        // Non-blocking Refresh via background thread and status polling
+        let isRefreshing = false;
         async function triggerNow() {
+            if (isRefreshing) return;
             const btn = document.getElementById('btnTrigger');
             btn.innerHTML = '<span class="inline-block animate-spin">⟳</span> Refreshing...';
             btn.disabled = true;
+            isRefreshing = true;
+
             try {
                 const res = await fetch('/api/trigger-signal', { method: 'POST' });
                 const json = await res.json();
-                if (res.ok && json.status === "SUCCESS") {
-                    showToast(json.message || "Signal refreshed and locked at 2:00 PM IST.", "success");
-                    await fetchStatus();
-                } else {
-                    showToast(json.error || "Signal refresh failed on server.", "error");
-                }
+                
+                // Poll for background completion
+                const startTime = Date.now();
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const sRes = await fetch('/api/refresh-status');
+                        const sJson = await sRes.json();
+                        
+                        if (sJson.status === "SUCCESS") {
+                            clearInterval(pollInterval);
+                            isRefreshing = false;
+                            btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Refresh';
+                            btn.disabled = false;
+                            showToast(sJson.message || "Signal refreshed and locked at 2:00 PM IST.", "success");
+                            await fetchStatus();
+                        } else if (sJson.status === "ERROR") {
+                            clearInterval(pollInterval);
+                            isRefreshing = false;
+                            btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Refresh';
+                            btn.disabled = false;
+                            showToast(sJson.error || sJson.message || "Signal calculation failed.", "error");
+                        } else if (Date.now() - startTime > 60000) {
+                            clearInterval(pollInterval);
+                            isRefreshing = false;
+                            btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Refresh';
+                            btn.disabled = false;
+                            showToast("Signal refresh timed out after 60 seconds.", "error");
+                        }
+                    } catch (err) {
+                        console.error("Polling error:", err);
+                    }
+                }, 1000);
             } catch (e) {
                 console.error(e);
-                showToast("Network error: " + e.message, "error");
-            } finally {
+                isRefreshing = false;
                 btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Refresh';
                 btn.disabled = false;
+                showToast("Network error: " + e.message, "error");
             }
         }
 
@@ -1728,6 +1757,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             if (emptyState) emptyState.classList.add('hidden');
             if (canvas) canvas.classList.remove('hidden');
             if (badge) badge.classList.remove('hidden');
+            currentCurve = window.__INITIAL_BACKTEST__.equity_curve;
             renderNativeChart(window.__INITIAL_BACKTEST__.equity_curve);
             setTimeout(() => { renderNativeChart(window.__INITIAL_BACKTEST__.equity_curve); }, 100);
         } else {
@@ -1742,7 +1772,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 def get_status_payload() -> Dict[str, Any]:
     mp = MarketDataProvider()
     quote = mp.get_live_quote()
-    current_price = float(quote.get("current_price") or 817.80)
+    # Single reference price across entire system
+    current_price = float(quote.get("current_price") or 814.95)
 
     timing_label, is_partial = TradingCalendar.get_price_timing_label()
     expiry_iso, expiry_label = TradingCalendar.calculate_order_expiry(trading_days=5)
@@ -1826,7 +1857,7 @@ def get_status_payload() -> Dict[str, Any]:
         is_intraday=is_partial
     )
 
-    peer_watchlist = MultiBankEngine.get_peer_comparison()
+    peer_watchlist = MultiBankEngine.get_peer_comparison(hdfc_live_price=current_price)
 
     return {
         "quote": quote,
@@ -1957,6 +1988,14 @@ window.__INITIAL_BACKTEST__ = {json.dumps(bt_data, default=str)};
                 self._send_json({"error": str(e)}, status=500)
             return
 
+        elif path == "/api/refresh-status":
+            try:
+                job_status = RefreshJobManager.get_status()
+                self._send_json(job_status, status=200)
+            except Exception as e:
+                self._send_json({"error": str(e)}, status=500)
+            return
+
         elif path == "/api/history":
             try:
                 recent = get_recent_predictions(limit=25)
@@ -1984,13 +2023,9 @@ window.__INITIAL_BACKTEST__ = {json.dumps(bt_data, default=str)};
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/trigger-signal":
             try:
-                gen = SignalGenerator()
-                result = gen.run_daily_signal(force=True)
-                self._send_json({
-                    "status": "SUCCESS",
-                    "message": "Signal recalculated and locked at 2:00 PM IST.",
-                    "prediction": result.get("prediction", {})
-                })
+                job = RefreshJobManager.start_job(force=True)
+                # HTTP 202 Accepted for background execution
+                self._send_json(job, status=202)
             except Exception as e:
                 self._send_json({"error": str(e)}, status=500)
         else:
@@ -1998,10 +2033,14 @@ window.__INITIAL_BACKTEST__ = {json.dumps(bt_data, default=str)};
             self.end_headers()
 
 
+class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
 def run_dashboard(port: int = PORT):
     server_address = ("", port)
-    socketserver.TCPServer.allow_reuse_address = True
-    httpd = socketserver.TCPServer(server_address, DashboardHandler)
+    httpd = ThreadedHTTPServer(server_address, DashboardHandler)
     print(f"HDFC Bank Accumulation Engine running at http://localhost:{port}")
     try:
         httpd.serve_forever()

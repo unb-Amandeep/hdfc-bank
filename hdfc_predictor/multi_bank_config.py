@@ -140,22 +140,48 @@ class MultiBankEngine:
     """
 
     @classmethod
-    def get_peer_comparison(cls) -> List[Dict[str, Any]]:
+    def get_peer_comparison(cls, hdfc_live_price: Optional[float] = None) -> List[Dict[str, Any]]:
         peers = []
         for sym, spec in BANK_PEER_DATABASE.items():
+            if sym == "HDFCBANK.NS" and hdfc_live_price is not None:
+                p = round(float(hdfc_live_price), 2)
+                pb = round(p / spec.book_value_per_share, 2)
+                status = spec.status_label
+                is_live = True
+            else:
+                # Live-fetch peer quote; if offline or fails, do not display fake round prices
+                p = None
+                pb = None
+                is_live = False
+                try:
+                    import yfinance as yf
+                    t = yf.Ticker(sym)
+                    fi = t.fast_info
+                    live_val = getattr(fi, "last_price", None)
+                    if live_val and float(live_val) > 0:
+                        p = round(float(live_val), 2)
+                        pb = round(p / spec.book_value_per_share, 2)
+                        is_live = True
+                except Exception:
+                    pass
+
+                status = spec.status_label
+
             peers.append({
                 "symbol": spec.symbol,
                 "display_name": spec.display_name,
                 "exchange_ticker": spec.exchange_ticker,
-                "price": spec.current_reference_price,
-                "pb": spec.current_pb,
+                "price": p,
+                "is_live_price": is_live,
+                "pb": pb,
+                "book_value_per_share": spec.book_value_per_share,
                 "own_median_pb": spec.own_5y_median_pb,
                 "pb_percentile": spec.own_5y_pb_percentile,
                 "trailing_roe": spec.trailing_roe_pct,
                 "car": spec.car_total_pct,
                 "gnpa": spec.gross_npa_pct,
                 "cd_ratio": spec.cd_ratio_pct,
-                "status": spec.status_label,
+                "status": status,
                 "filing_source": spec.filing_source
             })
         return peers
