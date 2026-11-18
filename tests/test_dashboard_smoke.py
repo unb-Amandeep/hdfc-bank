@@ -60,6 +60,8 @@ class TestDashboardSmoke(unittest.TestCase):
 
         # Verify all essential UI containers are present
         self.assertIn('id="equityChart"', html)
+        self.assertIn('id="sectionCompass"', html)
+        self.assertIn('Daily Compass', html)
         self.assertIn('id="eventsListContainer"', html)
         self.assertIn('id="gatesListContainer"', html)
         self.assertIn('id="peerWatchlistTableBody"', html)
@@ -110,6 +112,38 @@ class TestDashboardSmoke(unittest.TestCase):
         # Peer watchlist verification
         peers = data.get("peer_watchlist", [])
         self.assertEqual(len(peers), 4)
+
+        # Daily Compass verification (technicals + probabilistic forecasts)
+        compass = data.get("daily_compass")
+        self.assertIsNotNone(compass, "daily_compass payload missing from /api/status")
+
+        tech = compass.get("technicals")
+        self.assertIsNotNone(tech)
+        self.assertGreater(tech["dma_20"], 0)
+        self.assertGreater(tech["dma_50"], 0)
+        self.assertGreater(tech["dma_200"], 0)
+        self.assertGreater(tech["atr_14"], 0)
+        self.assertGreater(tech["anchored_vwap"], 0)
+        self.assertIn("fibonacci", tech)
+        self.assertGreaterEqual(tech["fibonacci"]["fib_382"], 760.0)
+        self.assertLessEqual(tech["fibonacci"]["fib_382"], 765.0)
+        self.assertGreaterEqual(tech["fibonacci"]["fib_500"], 742.0)
+        self.assertLessEqual(tech["fibonacci"]["fib_500"], 746.0)
+
+        forecast = compass.get("probabilistic_forecast")
+        self.assertIsNotNone(forecast)
+        self.assertGreaterEqual(len(forecast["forecasts"]), 4)
+        self.assertGreater(forecast["brier_skill_score_pct"], 0)
+        f0 = forecast["forecasts"][0]
+        self.assertIn("prob_1d_pct", f0)
+        self.assertIn("prob_3d_pct", f0)
+        self.assertIn("prob_5d_pct", f0)
+        self.assertIn("naive_prob_5d_pct", f0)
+        self.assertIn("edge_5d_pct", f0)
+
+        scoreboard = compass.get("compass_scoreboard")
+        self.assertIsNotNone(scoreboard)
+        self.assertGreater(scoreboard["total_forecasts_logged"], 0)
 
     def test_03_api_backtest_chart_points(self):
         """Rule 10: GET /api/backtest must return an equity curve with >= 2 plotted points."""
