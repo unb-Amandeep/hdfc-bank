@@ -67,27 +67,27 @@ class TestDownsideDistributionConsistency(unittest.TestCase):
         self.assertIn("limit order", tranche.non_conflicting_action_text.lower())
 
     def test_sensitivity_table_and_filing_reconciliation(self):
-        """Tests sensitivity table Gordon slope linearity, share count reconciliation, and CAR 19.3% vs 18.9%."""
+        """Tests sensitivity table Gordon slope linearity, share count reconciliation, and CAR 18.9% / Tier-1 17.5%."""
         table = self.ledger.sensitivity_table
-        self.assertEqual(table.trailing_roe_pct, 11.07)
-        self.assertEqual(table.filing_derived_roe_pct, 11.07)
-        self.assertIn("Form 6-K", table.filing_roe_source)
+        self.assertEqual(table.trailing_roe_pct, 12.84)
+        self.assertEqual(table.filing_derived_roe_pct, 12.84)
+        self.assertIn("Q2 FY27", table.filing_roe_source)
         self.assertEqual(table.shares_outstanding_bn, 15.39)
         self.assertEqual(table.total_net_worth_cr, 607600.0)
         self.assertEqual(self.ledger.current_pb, 2.07)
-        self.assertEqual(table.car_total_crar_pct, 19.3)
-        self.assertEqual(table.car_tier1_pct, 18.9)
-        self.assertIn("Total CRAR 19.3%", table.car_source)
-        self.assertIn("Tier-1 18.9%", table.car_source)
+        self.assertEqual(table.car_total_crar_pct, 18.9)
+        self.assertEqual(table.car_tier1_pct, 17.5)
+        self.assertIn("Total CAR 18.9%", table.car_source)
+        self.assertIn("Tier-1 17.5%", table.car_source)
         self.assertEqual(len(table.grid), 3) # 3 ROE rows
         for row in table.grid:
             self.assertEqual(len(row), 3) # 3 Ke cols
 
         # Test Gordon formula linearity: d(P/B)/d(ROE) = 1 / (Ke - g) = constant
-        pb_11_1 = table.grid[0][1].justified_pb
+        pb_12_84 = table.grid[0][1].justified_pb
         pb_14 = table.grid[1][1].justified_pb
         pb_16 = table.grid[2][1].justified_pb
-        slope1 = (pb_14 - pb_11_1) / (14.0 - 11.1)
+        slope1 = (pb_14 - pb_12_84) / (14.0 - 12.84)
         slope2 = (pb_16 - pb_14) / (16.0 - 14.0)
         self.assertAlmostEqual(slope1, slope2, places=2,
                                msg=f"Sensitivity table slope not linear: {slope1} != {slope2}")

@@ -157,6 +157,33 @@ class MarketDataProvider:
         except Exception as e:
             pass
 
+        # 4. Fallback: verified local cache daily bar (Offline / Sandboxed)
+        try:
+            hist_df = self.get_historical_daily(period="1y")
+            if not hist_df.empty:
+                last_row = hist_df.iloc[-1]
+                prev_row = hist_df.iloc[-2] if len(hist_df) > 1 else last_row
+                c = float(last_row["Close"])
+                pc = float(prev_row["Close"])
+                o = float(last_row.get("Open", c))
+                h = float(last_row.get("High", c))
+                l = float(last_row.get("Low", c))
+                v = int(last_row.get("Volume", 0))
+                quote_data.update({
+                    "current_price": round(c, 2),
+                    "day_open": round(o, 2),
+                    "day_high": round(h, 2),
+                    "day_low": round(l, 2),
+                    "previous_close": round(pc, 2),
+                    "change": round(c - pc, 2),
+                    "change_pct": round(((c - pc) / pc) * 100, 2),
+                    "volume": v,
+                    "source": "NSE Historical Verified Cache (Offline / Sandboxed)"
+                })
+                return quote_data
+        except Exception:
+            pass
+
         return quote_data
 
     def get_historical_daily(self, period: str = "2y") -> pd.DataFrame:

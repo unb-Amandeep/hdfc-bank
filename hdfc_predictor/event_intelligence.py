@@ -182,8 +182,8 @@ class EventIntelligenceEngine:
             why_moved = f"{top_e.category_label}: {top_e.title}. {top_e.explanation}"
         else:
             why_moved = (
-                "MSCI Global Standard Index weight increase triggered ~$3.5B+ in passive FII inflows, "
-                "while Q2 deposit mobilization (15.1% YoY) reassured markets on post-merger C/D ratio normalization."
+                "BSE/NSE Q2 FY27 standalone filing confirmed robust deposit growth of 18.8% YoY and PAT of ₹19,510 Cr, "
+                "driving C/D ratio down to 96.0% with pristine Gross NPA at 1.11%."
             )
 
         return {

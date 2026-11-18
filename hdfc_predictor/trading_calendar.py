@@ -91,5 +91,5 @@ class TradingCalendar:
 
         formatted_date = target.strftime("%b %d, %Y")
         iso_date = target.strftime("%Y-%m-%d")
-        label = f"Limit Order Valid: {trading_days} Trading Days (Expires {formatted_date})"
+        label = formatted_date
         return iso_date, label

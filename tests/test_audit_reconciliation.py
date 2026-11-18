@@ -24,11 +24,11 @@ class TestAuditReconciliation(unittest.TestCase):
     def test_roe_uses_same_equity_series(self):
         """Rule 2: Trailing ROE must use annualized Q2 profit over the exact same Net Worth."""
         net_worth = ValuationTargetEngine.TOTAL_NET_WORTH_CR # ₹6,07,600 Cr
-        ann_profit = ValuationTargetEngine.ANNUALIZED_PAT_CR  # ₹67,284 Cr
-        calc_roe = (ann_profit / net_worth) * 100.0          # 11.07%
+        ann_profit = ValuationTargetEngine.ANNUALIZED_PAT_CR  # ₹78,040 Cr
+        calc_roe = (ann_profit / net_worth) * 100.0          # 12.844%
         
         self.assertAlmostEqual(ValuationTargetEngine.TRAILING_ROE_PCT, calc_roe, delta=0.05)
-        self.assertEqual(round(ValuationTargetEngine.TRAILING_ROE_PCT, 1), 11.1)
+        self.assertEqual(round(ValuationTargetEngine.TRAILING_ROE_PCT, 1), 12.8)
 
     def test_bear_base_bull_strict_ordering(self):
         """Rule 3: Bear < Base < Bull strictly on justified P/B and target prices."""
