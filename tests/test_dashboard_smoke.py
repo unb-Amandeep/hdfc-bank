@@ -212,6 +212,48 @@ class TestDashboardSmoke(unittest.TestCase):
         job = RefreshJobManager.start_job(force=True)
         self.assertEqual(job["status"], "RUNNING")
 
+    def test_08_healthz_endpoint(self):
+        """Production Requirement 8: GET /healthz returns 200 OK with health status and feed state."""
+        status, body = self.make_request("GET", "/healthz")
+        self.assertEqual(status, 200)
+        data = json.loads(body.decode("utf-8"))
+        self.assertEqual(data.get("status"), "healthy")
+        self.assertEqual(data.get("service"), "hdfc-accumulation-engine")
+        self.assertTrue(data.get("database", {}).get("connected"))
+        self.assertIn("DATA STALE", data.get("feed", {}).get("status"))
+
+    def test_09_backup_ledger_endpoint(self):
+        """Production Requirement 8: POST /api/backup-ledger returns 200 OK and creates snapshot."""
+        status, body = self.make_request("POST", "/api/backup-ledger")
+        self.assertEqual(status, 200)
+        data = json.loads(body.decode("utf-8"))
+        self.assertEqual(data.get("status"), "success")
+        self.assertIn("backup_path", data)
+
+    def test_10_single_decision_object_and_macro_market(self):
+        """Production Requirements 2 & 7: Single Decision Object and Macro inputs in /api/status."""
+        status, body = self.make_request("GET", "/api/status")
+        self.assertEqual(status, 200)
+        data = json.loads(body.decode("utf-8"))
+
+        dec = data.get("decision_object")
+        self.assertIsNotNone(dec)
+        self.assertIn(dec["canonical_action"], ["WAIT", "BUY", "SELL"])
+        self.assertTrue(isinstance(dec["inputs"], (list, dict)))
+        self.assertGreaterEqual(len(dec["inputs"]), 4)
+        self.assertIsInstance(dec["disagreements"], list)
+
+        macro = data.get("macro_market")
+        self.assertIsNotNone(macro)
+        self.assertIn("institutional_flows", macro)
+        self.assertIn("india_vix", macro)
+        self.assertIn("bank_nifty", macro)
+        self.assertIn("options_oi", macro)
+        vix_val = macro["india_vix"].get("vix_level") or macro["india_vix"].get("value")
+        self.assertAlmostEqual(vix_val, 14.85, places=1)
+        bn_val = macro["bank_nifty"].get("index_level") or macro["bank_nifty"].get("value")
+        self.assertEqual(bn_val, 51840)
+
 
 if __name__ == "__main__":
     unittest.main()

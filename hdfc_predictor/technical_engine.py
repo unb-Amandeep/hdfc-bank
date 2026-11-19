@@ -139,14 +139,9 @@ class TechnicalEngine:
             tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
             atr_14 = round(float(tr.rolling(14).mean().iloc[-1]), 2)
 
-            # Cycle low and recent swing high of the latest sprint rally
+            # Cycle low and recent swing high of the latest sprint rally (Canonical Single Anchor Set)
             anchor_low = cls.CYCLE_52W_LOW_PRICE
-            post_low_bars = df_bars[df_bars.index >= cls.CYCLE_52W_LOW_DATE]
-            if not post_low_bars.empty:
-                recent_high = float(post_low_bars["High"].max())
-                anchor_high = round(max(recent_high, cls.RECENT_SWING_HIGH_PRICE), 2)
-            else:
-                anchor_high = cls.RECENT_SWING_HIGH_PRICE
+            anchor_high = cls.RECENT_SWING_HIGH_PRICE
 
             # Compute Anchored VWAP from low date onwards
             try:

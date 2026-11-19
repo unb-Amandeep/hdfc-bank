@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  hdfc-accumulation-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hdfc-accumulation-engine
+    ports:
+      - "8501:8501"
+    environment:
+      - PORT=8501
+      - HDFC_DATA_DIR=/app/data
+      - PYTHONUNBUFFERED=1
+      # Optional: set an API key for administrative endpoints (/api/trigger-signal, /api/backup-ledger)
+      # - ADMIN_KEY=your-secure-admin-token
+    volumes:
+      # Persistent SQLite volume mount for ledger and model checkpoints
+      - ./hdfc_predictor/data:/app/data
+      - ./hdfc_predictor/reports:/app/hdfc_predictor/reports
+      - ./hdfc_predictor/logs:/app/hdfc_predictor/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

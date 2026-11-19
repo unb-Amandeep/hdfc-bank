@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional
 import yfinance as yf
 
 from hdfc_predictor.config import settings
+from hdfc_predictor.filing_data import FILING_METRICS
 
 
 @dataclass
@@ -63,22 +64,19 @@ class FundamentalEngine:
         Retrieves real quarterly balance sheet and income metrics for HDFC Bank.
         Combines exchange filings data with real-time financial stats.
         """
-        # Verified latest audited standalone filing metrics (BSE/NSE Q2 FY27 Declared Oct 17, 2026)
-        # Standalone PAT: ₹19,510 Cr, Deposit Growth: 18.8%, Loan Growth: 16.3%, C/D: 96.0%, CAR: 18.9%, GNPA: 1.11%, NNPA: 0.37%
-        nim = 3.16
-        gnpa = 1.11
-        nnpa = 0.37
-        cd_ratio = 96.0
-        casa_ratio = 36.8
-        nii_growth = 9.7
-        deposit_growth = 18.8
-        loan_growth = 16.3
-        pcr = 70.3
-        car = 18.9
-
-        # Trailing Standalone ROE derived strictly from Net Worth ₹6,07,600 Cr and Annualized PAT ₹78,040 Cr
-        roa = 1.95
-        roe = 12.84
+        # Verified latest audited standalone filing metrics from single source of truth (Q2 FY27)
+        nim = float(FILING_METRICS["net_interest_margin_pct"])
+        gnpa = float(FILING_METRICS["gross_npa_pct"])
+        nnpa = float(FILING_METRICS["net_npa_pct"])
+        cd_ratio = float(FILING_METRICS["credit_to_deposit_ratio_pct"])
+        casa_ratio = float(FILING_METRICS["casa_ratio_pct"])  # 38.0%
+        nii_growth = float(FILING_METRICS["nii_growth_yoy_pct"])
+        deposit_growth = float(FILING_METRICS["deposit_growth_yoy_pct"])
+        loan_growth = float(FILING_METRICS["advance_growth_yoy_pct"])
+        pcr = float(FILING_METRICS["provision_coverage_ratio_pct"])
+        car = float(FILING_METRICS["capital_adequacy_ratio_pct"])
+        roa = float(FILING_METRICS["return_on_assets_pct"])
+        roe = float(FILING_METRICS["return_on_equity_pct"])
 
         # Calculate Fundamental Health Score (0 - 100)
         score = 85  # Base healthy start

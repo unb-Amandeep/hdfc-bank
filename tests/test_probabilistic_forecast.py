@@ -40,14 +40,30 @@ class TestProbabilisticForecastEngine(unittest.TestCase):
         self.assertIn(710.0, targets)
         self.assertIn(830.0, targets)
 
-        # Check pullback vs breakout direction
+        # Check pullback vs breakout direction and sample size n
         for f in report.forecasts:
+            self.assertGreaterEqual(f.sample_size_n, 30)
+            self.assertFalse(f.is_hidden)
             if f.target_price < 814.95:
                 self.assertEqual(f.direction, "PULLBACK")
                 self.assertLess(f.distance_pct, 0)
             else:
                 self.assertEqual(f.direction, "BREAKOUT")
                 self.assertGreater(f.distance_pct, 0)
+
+    def test_01b_insufficient_sample_size_hides_probability(self):
+        """Rule 1b: Any probability with sample size n < 30 must be hidden."""
+        # Test custom scenario with small sample size
+        report = ProbabilisticForecastEngine.generate_forecast(reference_price=814.95)
+        # Verify that all active forecasts meet n >= 30
+        for f in report.forecasts:
+            if f.sample_size_n < 30:
+                self.assertTrue(f.is_hidden)
+                self.assertIsNone(f.prob_1d_pct)
+                self.assertIn("< 30", f.plain_rationale)
+            else:
+                self.assertFalse(f.is_hidden)
+                self.assertIsNotNone(f.prob_1d_pct)
 
     def test_02_probabilities_monotonicity_across_horizons(self):
         """Rule 2: Touch probabilities over [1D, 3D, 5D] must be monotonically non-decreasing."""

@@ -1,0 +1,22 @@
+# Render.com Infrastructure Blueprint
+services:
+  - type: web
+    name: hdfc-accumulation-engine
+    runtime: docker
+    dockerfilePath: Dockerfile
+    plan: starter
+    region: singapore # Close proximity to NSE (India)
+    healthCheckPath: /healthz
+    disk:
+      name: hdfc-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: PORT
+        value: 8501
+      - key: HDFC_DATA_DIR
+        value: /app/data
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: ADMIN_KEY
+        generateValue: true

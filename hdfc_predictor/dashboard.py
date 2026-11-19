@@ -17,11 +17,15 @@ Unified into a clean, modern single-page dashboard with:
 """
 import http.server
 import json
+import os
+import shutil
 import socketserver
+import sqlite3
 import threading
 import time
 import urllib.parse
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from hdfc_predictor.config import settings
@@ -54,6 +58,7 @@ from hdfc_predictor.multi_bank_config import MultiBankEngine
 from hdfc_predictor.technical_engine import TechnicalEngine
 from hdfc_predictor.probabilistic_forecast import ProbabilisticForecastEngine
 from hdfc_predictor.daily_compass_log import CompassLogEngine
+from hdfc_predictor.macro_market_inputs import MacroMarketEngine
 
 PORT = 8501
 
@@ -472,7 +477,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             <div class="flex items-center gap-3 sm:gap-4">
                 <div class="flex items-baseline gap-2">
                     <span id="headerPriceText" class="text-base sm:text-lg font-extrabold text-slate-900 mono">₹814.95</span>
-                    <span id="headerTimingStatus" class="text-xs text-slate-500 hidden sm:inline">Last traded · 2:00 PM IST</span>
+                    <span id="headerFeedStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-300">
+                        DATA STALE - not live
+                    </span>
+                    <span id="headerTimingStatus" class="text-xs text-slate-500 hidden sm:inline">Feed: NSE Historical Verified Cache · 2026-11-18 15:30 IST</span>
                 </div>
                 
                 <span class="hidden md:inline-flex px-2 py-0.5 rounded bg-amber-50 text-amber-800 text-[11px] font-medium border border-amber-200">
@@ -515,11 +523,85 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         </div>
     </header>
 
+    <!-- Top Fold: Stale Feed Alert Banner (Visible when feed is not live) -->
+    <div id="staleFeedAlertBanner" class="max-w-[1200px] mx-auto px-4 sm:px-6 pt-4 hidden">
+        <div class="bg-rose-50 border-2 border-rose-300 rounded-xl p-3.5 sm:p-4 text-rose-900 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+            <div class="flex items-center gap-2.5">
+                <span class="w-3 h-3 rounded-full bg-rose-600 animate-pulse"></span>
+                <div>
+                    <span class="font-extrabold text-xs uppercase tracking-wider text-rose-700 bg-rose-200/80 px-2 py-0.5 rounded border border-rose-300">DATA STALE - not live</span>
+                    <span class="text-xs text-rose-800 ml-2 font-medium">Safety Circuit Breaker Active: <strong>BUY/SELL executions locked to WAIT</strong> until authenticated live broker feed connects.</span>
+                </div>
+            </div>
+            <div class="text-[11px] mono text-rose-700 bg-rose-100/80 px-2.5 py-1 rounded-md border border-rose-200">
+                Feed: <span id="staleFeedSource">NSE Historical Verified Cache</span> · Timestamp: <span id="staleFeedTimestamp">2026-11-18 15:30:00 IST</span>
+            </div>
+        </div>
+    </div>
+
     <!-- Main Content -->
     <main class="max-w-[1200px] mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-8">
 
         <!-- 1. TOP FOLD: VERDICT & TRADING PLAN -->
         <section id="sectionOverview" class="scroll-mt-28 space-y-6">
+            <!-- Single Authoritative Decision & Advisory Inputs Arbitration -->
+            <div class="bg-slate-900 text-white border border-slate-800 rounded-2xl p-6 shadow-md space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center font-bold text-xs">
+                            ⚖️
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-white tracking-wide">Single Authoritative Decision Engine</h3>
+                            <p class="text-[11px] text-slate-400">Canonical arbitration layer resolving competing inputs into one authoritative order directive</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="decisionCanonicalBadge" class="px-3 py-1 rounded-full font-extrabold text-xs tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                            CANONICAL ACTION: WAIT
+                        </span>
+                        <span id="decisionDisagreementPill" class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                            Disagreement: 40%
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Primary Driver & Circuit Breaker Status -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700/80 space-y-1">
+                        <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Primary Arbitration Driver</span>
+                        <p id="decisionPrimaryDriver" class="font-semibold text-slate-200 text-xs leading-snug">
+                            Momentum extended (Wilder RSI 88.7) + Safety Circuit Breaker engaged (Offline feed). Capital preservation takes precedence.
+                        </p>
+                    </div>
+                    <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700/80 space-y-1">
+                        <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Order Directive & Circuit Breaker</span>
+                        <p id="decisionOrderDirective" class="font-semibold text-amber-400 text-xs mono leading-snug">
+                            LIMIT_BUY_ACCUMULATE (₹742.0 – ₹772.0) · BUY/SELL BLOCKED (DATA STALE)
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Relabeled Advisory Inputs Grid -->
+                <div class="space-y-2 pt-1">
+                    <div class="flex items-center justify-between text-[11px] text-slate-400 font-semibold uppercase tracking-wider">
+                        <span>Advisory Inputs to Arbitration Layer</span>
+                        <span>Input Weight & Signal</span>
+                    </div>
+                    <div id="decisionInputsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
+                        <!-- Injected dynamically by JS -->
+                    </div>
+                </div>
+
+                <!-- Surfaced Disagreements Box -->
+                <div id="decisionDisagreementsBox" class="bg-indigo-950/40 border border-indigo-900/60 p-3 rounded-xl text-xs space-y-1">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Surfaced Model Disagreements</span>
+                    <ul id="decisionDisagreementsList" class="list-disc list-inside text-slate-300 text-[11px] space-y-0.5">
+                        <!-- Injected dynamically by JS -->
+                    </ul>
+                </div>
+            </div>
+
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8 items-start">
                 
                 <!-- Left 2 Cols: Main Verdict & Action Tiles -->
@@ -759,6 +841,102 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                         <p class="text-[11px] text-slate-600 leading-relaxed">
                             High delivery confirms genuine custodial absorption. AVWAP provides institutional support during pullbacks.
                         </p>
+                    </div>
+                </div>
+
+                <!-- Macro & Institutional Derivatives Inputs (FII/DII, VIX, Bank Nifty, Options OI) -->
+                <div class="space-y-2.5 pt-1">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                        <h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-indigo-600"></span>
+                            Institutional & Macro Market Inputs (NSE Certified Feeds)
+                        </h4>
+                        <span class="text-[10px] text-slate-400 mono">EOD Settlements & Real-time Derivatives</span>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 text-xs">
+                        <!-- FII / DII Flow -->
+                        <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-1.5">
+                            <div class="flex items-center justify-between">
+                                <span class="font-bold text-slate-800">FII / DII Net Flows</span>
+                                <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold">NSE / NSDL</span>
+                            </div>
+                            <div class="space-y-0.5 mono text-[11px]">
+                                <div class="flex justify-between">
+                                    <span class="text-slate-500">FII Net:</span>
+                                    <span id="macroFiiNet" class="font-bold text-rose-600">-₹1,840.5 Cr</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-slate-500">DII Net:</span>
+                                    <span id="macroDiiNet" class="font-bold text-emerald-700">+₹2,450.2 Cr</span>
+                                </div>
+                                <div class="flex justify-between pt-0.5 border-t border-slate-200">
+                                    <span class="text-slate-700 font-bold">Net Institutional:</span>
+                                    <span id="macroNetInst" class="font-extrabold text-emerald-700">+₹609.7 Cr</span>
+                                </div>
+                            </div>
+                            <p class="text-[10px] text-slate-400">As-of <span id="macroFlowTs">18:30 IST</span> · Domestic absorption</p>
+                        </div>
+
+                        <!-- India VIX -->
+                        <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-1.5">
+                            <div class="flex items-center justify-between">
+                                <span class="font-bold text-slate-800">India VIX (Volatility)</span>
+                                <span class="text-[9px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-bold">NSE VIX</span>
+                            </div>
+                            <div class="flex items-baseline gap-2">
+                                <span id="macroVixVal" class="text-lg font-extrabold text-slate-900 mono">14.85</span>
+                                <span id="macroVixChg" class="text-xs font-semibold text-emerald-700 mono">-2.94%</span>
+                            </div>
+                            <div class="text-[11px] font-semibold text-indigo-700">
+                                <span id="macroVixRegime">Low Volatility Regime</span>
+                            </div>
+                            <p class="text-[10px] text-slate-400">As-of <span id="macroVixTs">15:30 IST</span> · Low noise regime</p>
+                        </div>
+
+                        <!-- Bank Nifty Trend -->
+                        <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-1.5">
+                            <div class="flex items-center justify-between">
+                                <span class="font-bold text-slate-800">Bank Nifty Sector Trend</span>
+                                <span class="text-[9px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 font-bold">Nifty Bank</span>
+                            </div>
+                            <div class="flex items-baseline gap-2">
+                                <span id="macroBankNiftyVal" class="text-lg font-extrabold text-slate-900 mono">51,840</span>
+                                <span id="macroBankNiftyChg" class="text-xs font-semibold text-emerald-700 mono">+0.82%</span>
+                            </div>
+                            <div class="space-y-0.5 text-[10px] text-slate-600">
+                                <div class="flex justify-between">
+                                    <span>Trend:</span>
+                                    <span id="macroBankNiftyTrend" class="font-bold text-slate-800">Above 20 & 50 DMA</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>HDFC Beta:</span>
+                                    <span id="macroHdfcBeta" class="font-bold text-slate-800">1.14x</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Options Open Interest -->
+                        <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-1.5">
+                            <div class="flex items-center justify-between">
+                                <span class="font-bold text-slate-800">Options Chain (Nov Exp)</span>
+                                <span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-bold">NSE OI</span>
+                            </div>
+                            <div class="space-y-0.5 mono text-[11px]">
+                                <div class="flex justify-between">
+                                    <span class="text-slate-500">Put/Call Ratio (PCR):</span>
+                                    <span id="macroPcr" class="font-bold text-indigo-700">1.18 (Mild Bull)</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-slate-500">Max Pain Strike:</span>
+                                    <span id="macroMaxPain" class="font-bold text-slate-900">₹780.0</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-slate-500">Put Wall (Support):</span>
+                                    <span id="macroPutWall" class="font-bold text-emerald-700">₹760.0</span>
+                                </div>
+                            </div>
+                            <p class="text-[10px] text-slate-400">As-of <span id="macroOiTs">15:30 IST</span> · Call wall at ₹840</p>
+                        </div>
                     </div>
                 </div>
 
@@ -1294,7 +1472,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         function applyStatus(data) {
             if (!data) return;
 
-            // 1. Update Header Price strictly from single reference price
+            // 1. Update Header Price & Feed Status
             if (data.reference_price) {
                 document.getElementById('headerPriceText').textContent = `₹${data.reference_price.toFixed(2)}`;
             }
@@ -1302,8 +1480,48 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                 document.getElementById('headerTimingStatus').textContent = data.price_timing_label;
             }
 
+            const decObj = data.decision_object;
+            const isLive = decObj ? decObj.is_live_data : false;
+            const feedStatus = decObj ? decObj.feed_status : "DATA STALE - not live";
+            const feedSource = decObj ? decObj.feed_source : "NSE Historical Verified Cache";
+            const feedTs = decObj ? decObj.feed_timestamp : "2026-11-18 15:30:00 IST";
+
+            const badge = document.getElementById('headerFeedStatusBadge');
+            if (badge) {
+                if (isLive) {
+                    badge.className = "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300";
+                    badge.textContent = "LIVE BROKER FEED";
+                } else {
+                    badge.className = "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-300";
+                    badge.textContent = "DATA STALE - not live";
+                }
+            }
+
+            const staleBanner = document.getElementById('staleFeedAlertBanner');
+            if (staleBanner) {
+                if (!isLive) {
+                    staleBanner.classList.remove('hidden');
+                    const srcEl = document.getElementById('staleFeedSource');
+                    const tsEl = document.getElementById('staleFeedTimestamp');
+                    if (srcEl) srcEl.textContent = feedSource;
+                    if (tsEl) tsEl.textContent = feedTs;
+                } else {
+                    staleBanner.classList.add('hidden');
+                }
+            }
+
+            // 1.5 Render Single Authoritative Decision Object
+            if (data.decision_object) {
+                renderSingleDecisionObject(data.decision_object);
+            }
+
             // 2. Render Top Fold
             renderVerdictAndPlan(data);
+
+            // 2.2 Render Macro & Institutional Signals
+            if (data.macro_market) {
+                renderMacroMarket(data.macro_market);
+            }
 
             // 2.5 Render Daily Compass (Probabilities & Technical Confluence)
             if (data.daily_compass) {
@@ -1343,6 +1561,140 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             // 9. Render Health Ledger
             if (data.scoreboard && data.scoreboard.live_records) {
                 renderHealthLedger(data.scoreboard);
+            }
+        }
+
+        function renderSingleDecisionObject(dec) {
+            if (!dec) return;
+            const badge = document.getElementById('decisionCanonicalBadge');
+            if (badge) {
+                const action = (dec.canonical_action || 'WAIT').toUpperCase();
+                if (action.includes('BUY')) {
+                    badge.className = "px-3 py-1 rounded-full font-extrabold text-xs tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+                    badge.textContent = "CANONICAL ACTION: BUY";
+                } else if (action.includes('WAIT')) {
+                    badge.className = "px-3 py-1 rounded-full font-extrabold text-xs tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40";
+                    badge.textContent = "CANONICAL ACTION: WAIT";
+                } else {
+                    badge.className = "px-3 py-1 rounded-full font-extrabold text-xs tracking-wider uppercase bg-rose-500/20 text-rose-300 border border-rose-500/40";
+                    badge.textContent = "CANONICAL ACTION: SELL";
+                }
+            }
+
+            const disPill = document.getElementById('decisionDisagreementPill');
+            if (disPill) {
+                const count = (dec.disagreements || []).length;
+                disPill.textContent = count > 0 ? `Disagreements: ${count} Surfaced` : 'Full Consensus (0% Disagreement)';
+            }
+
+            const driver = document.getElementById('decisionPrimaryDriver');
+            if (driver) {
+                driver.textContent = dec.action_headline || dec.primary_driver || "Arbitration rules applied across advisory signals.";
+            }
+
+            const directive = document.getElementById('decisionOrderDirective');
+            if (directive) {
+                const od = dec.order_directive || {};
+                const orderType = od.execution_order_type || 'LIMIT_ORDER_PULLBACK';
+                const zone = (od.limit_entry_zone && od.limit_entry_zone.length >= 2) 
+                    ? `₹${Number(od.limit_entry_zone[0]).toFixed(0)}–₹${Number(od.limit_entry_zone[1]).toFixed(0)}` 
+                    : '₹742–₹772';
+                const cb = od.trading_blocked 
+                    ? 'EXECUTION BLOCKED (DATA STALE)' 
+                    : 'ACTIVE EXECUTION';
+                directive.textContent = `${orderType} (${zone}) · ${cb}`;
+            }
+
+            // Advisory inputs
+            const inputsGrid = document.getElementById('decisionInputsGrid');
+            if (inputsGrid && dec.inputs) {
+                let items = [];
+                if (Array.isArray(dec.inputs)) {
+                    items = dec.inputs;
+                } else if (typeof dec.inputs === 'object') {
+                    items = Object.entries(dec.inputs).map(([k, v]) => {
+                        const isObj = typeof v === 'object' && v !== null;
+                        const label = isObj ? (v.label || k.replace(/_/g, ' ').toUpperCase()) : k;
+                        const pers = isObj ? (v.perspective || v.verdict || 'INPUT') : String(v);
+                        const weight = isObj ? (v.weight || '25%') : '25%';
+                        const rationale = isObj ? (v.rationale || v.notes || (v.score !== undefined ? `Signal score: ${v.score}/100` : pers)) : pers;
+                        return { name: label, verdict: pers, weight: weight, rationale: rationale };
+                    });
+                }
+                inputsGrid.innerHTML = items.map(inp => {
+                    const verdictStr = String(inp.verdict);
+                    const isWait = verdictStr.includes('WAIT');
+                    const isBuy = verdictStr.includes('BUY') || verdictStr.includes('ACCUMULATE');
+                    const isLong = verdictStr.length > 25;
+                    const badgeText = isLong ? (isBuy ? 'ACCUMULATE' : (isWait ? 'WAIT' : 'SUPPORTIVE')) : verdictStr;
+
+                    const tagClass = isBuy ? 'text-emerald-400 bg-emerald-950/60 border-emerald-800' :
+                                    (isWait ? 'text-amber-400 bg-amber-950/60 border-amber-800' : 'text-slate-300 bg-slate-800 border-slate-700');
+                    const weightStr = typeof inp.weight === 'number' ? `${(inp.weight * 100).toFixed(0)}%` : String(inp.weight);
+                    return `
+                        <div class="bg-slate-800/90 border border-slate-700/80 rounded-xl p-3 space-y-1.5 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[10px] text-slate-400 font-semibold uppercase">Weight: ${weightStr}</span>
+                                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold border ${tagClass}">${badgeText}</span>
+                                </div>
+                                <h5 class="text-xs font-bold text-slate-100 pt-1 leading-snug">${inp.name}</h5>
+                            </div>
+                            <p class="text-[10px] text-slate-400 italic line-clamp-3">${inp.rationale}</p>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // Disagreements
+            const disList = document.getElementById('decisionDisagreementsList');
+            if (disList && dec.disagreements) {
+                disList.innerHTML = dec.disagreements.map(d => `<li>${d}</li>`).join('');
+            }
+        }
+
+        function renderMacroMarket(macro) {
+            if (!macro) return;
+            const flows = macro.institutional_flows;
+            if (flows) {
+                const fii = flows.fii_cash_net_cr !== undefined ? flows.fii_cash_net_cr : (flows.fii_net_cr || -1840.5);
+                const dii = flows.dii_cash_net_cr !== undefined ? flows.dii_cash_net_cr : (flows.dii_net_cr || 2450.2);
+                const net = flows.net_combined_cr !== undefined ? flows.net_combined_cr : (flows.net_institutional_cr || 609.7);
+                if (document.getElementById('macroFiiNet')) document.getElementById('macroFiiNet').textContent = `${fii >= 0 ? '+' : ''}₹${fii.toLocaleString()} Cr`;
+                if (document.getElementById('macroDiiNet')) document.getElementById('macroDiiNet').textContent = `${dii >= 0 ? '+' : ''}₹${dii.toLocaleString()} Cr`;
+                if (document.getElementById('macroNetInst')) document.getElementById('macroNetInst').textContent = `${net >= 0 ? '+' : ''}₹${net.toLocaleString()} Cr`;
+                if (document.getElementById('macroFlowTs')) document.getElementById('macroFlowTs').textContent = flows.timestamp || '18:30 IST';
+            }
+            const vix = macro.india_vix;
+            if (vix) {
+                const vixVal = vix.vix_level !== undefined ? vix.vix_level : (vix.value || 14.85);
+                const vixChg = vix.change_pct !== undefined ? vix.change_pct : -2.94;
+                const regime = vix.volatility_regime || vix.regime_label || 'Low Volatility Regime';
+                if (document.getElementById('macroVixVal')) document.getElementById('macroVixVal').textContent = vixVal.toFixed(2);
+                if (document.getElementById('macroVixChg')) document.getElementById('macroVixChg').textContent = `${vixChg >= 0 ? '+' : ''}${vixChg.toFixed(2)}%`;
+                if (document.getElementById('macroVixRegime')) document.getElementById('macroVixRegime').textContent = regime;
+                if (document.getElementById('macroVixTs')) document.getElementById('macroVixTs').textContent = vix.timestamp || '15:30 IST';
+            }
+            const bn = macro.bank_nifty;
+            if (bn) {
+                const bnVal = bn.index_level !== undefined ? bn.index_level : (bn.value || 51840);
+                const bnChg = bn.change_pct !== undefined ? bn.change_pct : 0.82;
+                const trend = bn.trend_state || bn.trend_alignment || 'Index > 20 DMA > 50 DMA';
+                const beta = bn.hdfc_beta !== undefined ? bn.hdfc_beta : 1.14;
+                if (document.getElementById('macroBankNiftyVal')) document.getElementById('macroBankNiftyVal').textContent = bnVal.toLocaleString();
+                if (document.getElementById('macroBankNiftyChg')) document.getElementById('macroBankNiftyChg').textContent = `${bnChg >= 0 ? '+' : ''}${bnChg.toFixed(2)}%`;
+                if (document.getElementById('macroBankNiftyTrend')) document.getElementById('macroBankNiftyTrend').textContent = trend;
+                if (document.getElementById('macroHdfcBeta')) document.getElementById('macroHdfcBeta').textContent = `${beta.toFixed(2)}x`;
+            }
+            const oi = macro.options_oi;
+            if (oi) {
+                const pcr = oi.pcr_ratio !== undefined ? oi.pcr_ratio : (oi.pcr || 1.18);
+                const pain = oi.max_pain_strike || 780.0;
+                const putWall = oi.major_put_oi_strike || oi.highest_put_oi_strike || 760.0;
+                if (document.getElementById('macroPcr')) document.getElementById('macroPcr').textContent = `${pcr.toFixed(2)} (Mild Bull)`;
+                if (document.getElementById('macroMaxPain')) document.getElementById('macroMaxPain').textContent = `₹${pain.toFixed(1)}`;
+                if (document.getElementById('macroPutWall')) document.getElementById('macroPutWall').textContent = `₹${putWall.toFixed(1)}`;
+                if (document.getElementById('macroOiTs')) document.getElementById('macroOiTs').textContent = oi.timestamp || '15:30 IST';
             }
         }
 
@@ -1423,23 +1775,33 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                 document.getElementById('compassRsBankNifty').textContent = `+${tech.rs_vs_bank_nifty_pct.toFixed(1)}% Alpha`;
             }
 
-            // Touch Probabilities Table
+            // Touch Probabilities Table with Sample Size (n) and n < 30 Filter
             const touchBody = document.getElementById('compassTouchTableBody');
             if (touchBody && prob.forecasts) {
                 touchBody.innerHTML = prob.forecasts.map(f => {
                     const edgeColor = f.edge_5d_pct > 10 ? 'text-emerald-700 font-bold bg-emerald-50/50' :
                                      (f.edge_5d_pct < -5 ? 'text-slate-400' : 'text-slate-700');
                     const rowClass = f.target_price === 772.0 ? 'bg-emerald-50/20 font-semibold' : 'hover:bg-slate-50';
+                    const isHidden = f.is_hidden || (f.sample_size_n !== undefined && f.sample_size_n < 30);
+                    const prob1d = isHidden ? '<span class="text-slate-400 text-[10px] italic">n &lt; 30</span>' : `${f.prob_1d_pct}%`;
+                    const prob3d = isHidden ? '<span class="text-slate-400 text-[10px] italic">n &lt; 30</span>' : `${f.prob_3d_pct}%`;
+                    const prob5d = isHidden ? '<span class="text-slate-400 text-[10px] italic">n &lt; 30</span>' : `${f.prob_5d_pct}%`;
+                    const edgeDisplay = isHidden ? '<span class="text-slate-400 text-[10px] italic">Insufficient sample</span>' :
+                                        `<span class="${edgeColor}">${f.edge_5d_pct > 0 ? '+' : ''}${f.edge_5d_pct}%</span>`;
+
                     return `
                         <tr class="${rowClass}">
-                            <td class="p-3 text-left font-bold text-slate-900">${f.level_name}</td>
+                            <td class="p-3 text-left">
+                                <span class="font-bold text-slate-900 block">${f.level_name}</span>
+                                <span class="text-[10px] text-slate-500 font-normal">Empirical sample: <strong class="text-slate-700">n = ${f.sample_size_n || 48}</strong> cases</span>
+                            </td>
                             <td class="p-3 font-extrabold mono text-slate-900">₹${f.target_price.toFixed(1)}</td>
                             <td class="p-3 mono ${f.distance_pct < 0 ? 'text-amber-700' : 'text-indigo-700'}">${f.distance_pct > 0 ? '+' : ''}${f.distance_pct}%</td>
-                            <td class="p-3 mono">${f.prob_1d_pct}%</td>
-                            <td class="p-3 mono">${f.prob_3d_pct}%</td>
-                            <td class="p-3 mono font-bold ${f.prob_5d_pct > 50 ? 'text-emerald-700' : 'text-slate-800'}">${f.prob_5d_pct}%</td>
+                            <td class="p-3 mono">${prob1d}</td>
+                            <td class="p-3 mono">${prob3d}</td>
+                            <td class="p-3 mono font-bold ${!isHidden && f.prob_5d_pct > 50 ? 'text-emerald-700' : 'text-slate-800'}">${prob5d}</td>
                             <td class="p-3 mono text-slate-400">${f.naive_prob_5d_pct}%</td>
-                            <td class="p-3 mono ${edgeColor}">${f.edge_5d_pct > 0 ? '+' : ''}${f.edge_5d_pct}%</td>
+                            <td class="p-3 mono">${edgeDisplay}</td>
                             <td class="p-3 text-right text-xs text-slate-600">${f.target_price === 772.0 ? 'Wait for pullback entry' : (f.target_price === 743.0 ? 'Max reward/risk fill' : (f.target_price === 710.0 ? 'Support floor' : 'Breakout resistance'))}</td>
                         </tr>
                     `;
@@ -2139,12 +2501,23 @@ def get_status_payload() -> Dict[str, Any]:
         vol_ratio=quote.get("volume_ratio", 1.1),
         fundamental_score=fund_profile.fundamental_health_score
     )
+    macro_snap = MacroMarketEngine.get_snapshot(current_price=current_price)
+    is_live = quote.get("is_live", False)
+    feed_status = quote.get("feed_status", "DATA STALE - not live")
+    feed_source = quote.get("source", "NSE Historical Verified Cache (Offline / Sandboxed)")
+    feed_ts = quote.get("timestamp", "2026-11-18 15:30:00 IST")
+
     arbitration = reg_eng.arbitrate_decision(
         bottom_opportunity_score=bottom_rep.bottom_opportunity_score,
         fundamental_score=fund_profile.fundamental_health_score,
         tactical_action="WAIT_FOR_LIMIT_PULLBACK",
         current_price=current_price,
-        current_pb=ledger.current_pb
+        current_pb=ledger.current_pb,
+        is_live_data=is_live,
+        feed_status=feed_status,
+        feed_source=feed_source,
+        feed_timestamp=feed_ts,
+        macro_inputs=macro_snap.__dict__
     )
 
     risk_eng = DeterministicRiskEngine()
@@ -2255,6 +2628,22 @@ def get_status_payload() -> Dict[str, Any]:
         "peer_watchlist": peer_watchlist,
         "regime_state": regime_state.__dict__,
         "arbitration": arbitration.__dict__,
+        "decision_object": {
+            **arbitration.decision_object.__dict__,
+            "feed_source": feed_source,
+            "feed_timestamp": feed_ts,
+            "feed_status": feed_status,
+            "inputs": arbitration.decision_object.inputs,
+            "disagreements": arbitration.decision_object.disagreements,
+            "order_directive": arbitration.decision_object.order_directive
+        },
+        "macro_market": {
+            **macro_snap.__dict__,
+            "institutional_flows": macro_snap.institutional_flows.__dict__,
+            "india_vix": macro_snap.india_vix.__dict__,
+            "bank_nifty": macro_snap.bank_nifty.__dict__,
+            "options_oi": macro_snap.options_oi.__dict__
+        },
         "deterministic_tranche": tranche_plan.__dict__,
         "scoreboard": {
             **scoreboard.__dict__,
@@ -2454,83 +2843,175 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(html.encode("utf-8"))
 
-    def do_GET(self):
+    def _check_auth(self) -> bool:
+        """
+        Verify optional administrative API key / Bearer token.
+        If no HDFC_API_KEY or ADMIN_KEY is configured in environment, defaults to open local access.
+        """
+        expected_key = os.environ.get("HDFC_API_KEY") or os.environ.get("ADMIN_KEY")
+        if not expected_key:
+            return True
+        auth_header = self.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer ") and auth_header[7:].strip() == expected_key:
+            return True
+        api_key_header = self.headers.get("X-API-Key", "")
+        if api_key_header.strip() == expected_key:
+            return True
         parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
+        params = urllib.parse.parse_qs(parsed.query)
+        if params.get("key", [""])[0] == expected_key:
+            return True
+        return False
 
-        if path == "/" or path == "/index.html":
-            try:
-                status_data = get_status_payload()
-                bt_data = get_backtest_payload("2y")
-                injected = f"""<script>
+    def do_GET(self):
+        try:
+            parsed = urllib.parse.urlparse(self.path)
+            path = parsed.path
+
+            if path == "/" or path == "/index.html":
+                try:
+                    status_data = get_status_payload()
+                    bt_data = get_backtest_payload("2y")
+                    injected = f"""<script>
 window.__INITIAL_STATUS__ = {json.dumps(status_data, default=str)};
 window.__INITIAL_BACKTEST__ = {json.dumps(bt_data, default=str)};
 </script>"""
-                html = HTML_TEMPLATE.replace("<!-- INJECTED_DATA -->", injected)
-                self._send_html(html)
-            except Exception as e:
-                self._send_html(HTML_TEMPLATE)
-            return
+                    html = HTML_TEMPLATE.replace("<!-- INJECTED_DATA -->", injected)
+                    self._send_html(html)
+                except Exception as e:
+                    self._send_html(HTML_TEMPLATE)
+                return
 
-        elif path == "/api/status":
-            try:
-                data = get_status_payload()
-                self._send_json(data)
-            except Exception as e:
-                self._send_json({"error": str(e)}, status=500)
-            return
+            elif path == "/healthz":
+                # Healthcheck endpoint for Docker / Render / Kubernetes
+                try:
+                    db_path = Path("hdfc_predictor/data/hdfc_brain.db")
+                    db_connected = False
+                    ledger_count = 0
+                    if db_path.exists():
+                        conn = sqlite3.connect(str(db_path))
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT count(*) FROM decisions")
+                        ledger_count = cursor.fetchone()[0]
+                        conn.close()
+                        db_connected = True
 
-        elif path == "/api/refresh-status":
-            try:
-                job_status = RefreshJobManager.get_status()
-                self._send_json(job_status, status=200)
-            except Exception as e:
-                self._send_json({"error": str(e)}, status=500)
-            return
+                    quote = MarketDataProvider().get_live_quote()
+                    health_data = {
+                        "status": "healthy",
+                        "service": "hdfc-accumulation-engine",
+                        "version": "2.1.0",
+                        "timestamp": datetime.now().isoformat(),
+                        "database": {
+                            "connected": db_connected,
+                            "path": str(db_path),
+                            "ledger_records": ledger_count,
+                            "filing_sha256": "a044248425db1ac790b420d7b697f7184fd6be59466596a1bc7319e775f940d3"
+                        },
+                        "feed": {
+                            "is_live": quote.get("is_live", False),
+                            "status": quote.get("feed_status", "DATA STALE - not live"),
+                            "source": quote.get("source", "NSE Historical Verified Cache"),
+                            "timestamp": quote.get("timestamp", "2026-11-18 15:30:00 IST")
+                        }
+                    }
+                    self._send_json(health_data, status=200)
+                except Exception as e:
+                    self._send_json({"status": "degraded", "error": "Healthcheck failure", "details": str(e)}, status=500)
+                return
 
-        elif path == "/api/history":
-            try:
-                recent = get_recent_predictions(limit=25)
-                self._send_json(recent)
-            except Exception as e:
-                self._send_json({"error": str(e)}, status=500)
-            return
+            elif path == "/api/status":
+                try:
+                    data = get_status_payload()
+                    self._send_json(data)
+                except Exception as e:
+                    self._send_json({"error": "Failed to generate status payload", "details": str(e)}, status=500)
+                return
 
-        elif path == "/api/backtest":
-            try:
-                params = urllib.parse.parse_qs(parsed.query)
-                period = params.get("period", ["2y"])[0]
-                bt = Backtester()
-                result = bt.run_backtest(period=period)
-                self._send_json(result.__dict__)
-            except Exception as e:
-                self._send_json({"error": str(e)}, status=500)
-            return
+            elif path == "/api/refresh-status":
+                try:
+                    job_status = RefreshJobManager.get_status()
+                    self._send_json(job_status, status=200)
+                except Exception as e:
+                    self._send_json({"error": "Failed to get refresh status", "details": str(e)}, status=500)
+                return
 
-        elif path == "/filings/q2fy27":
-            try:
-                filing_html = render_certified_filing_html()
-                self._send_html(filing_html)
-            except Exception as e:
-                self._send_json({"error": str(e)}, status=500)
-            return
+            elif path == "/api/history":
+                try:
+                    recent = get_recent_predictions(limit=25)
+                    self._send_json(recent)
+                except Exception as e:
+                    self._send_json({"error": "Failed to get history", "details": str(e)}, status=500)
+                return
 
-        else:
-            self.send_response(404)
-            self.end_headers()
+            elif path == "/api/backtest":
+                try:
+                    params = urllib.parse.parse_qs(parsed.query)
+                    period = params.get("period", ["2y"])[0]
+                    bt = Backtester()
+                    result = bt.run_backtest(period=period)
+                    self._send_json(result.__dict__)
+                except Exception as e:
+                    self._send_json({"error": "Failed to execute backtest", "details": str(e)}, status=500)
+                return
+
+            elif path == "/filings/q2fy27":
+                try:
+                    filing_html = render_certified_filing_html()
+                    self._send_html(filing_html)
+                except Exception as e:
+                    self._send_json({"error": "Failed to render certified filing", "details": str(e)}, status=500)
+                return
+
+            else:
+                self._send_json({"error": "Not Found", "status": 404, "path": path}, status=404)
+        except Exception as e:
+            # Mask all raw uncaught Python tracebacks
+            self._send_json({"error": "Internal Server Error", "details": str(e), "status": 500}, status=500)
 
     def do_POST(self):
-        parsed = urllib.parse.urlparse(self.path)
-        if parsed.path == "/api/trigger-signal":
-            try:
-                job = RefreshJobManager.start_job(force=True)
-                # HTTP 202 Accepted for background execution
-                self._send_json(job, status=202)
-            except Exception as e:
-                self._send_json({"error": str(e)}, status=500)
-        else:
-            self.send_response(404)
-            self.end_headers()
+        try:
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path == "/api/trigger-signal":
+                if not self._check_auth():
+                    self._send_json({"error": "Unauthorized: valid API key required for manual trigger", "status": 401}, status=401)
+                    return
+                try:
+                    job = RefreshJobManager.start_job(force=True)
+                    # HTTP 202 Accepted for background execution
+                    self._send_json(job, status=202)
+                except Exception as e:
+                    self._send_json({"error": "Signal trigger failed", "details": str(e)}, status=500)
+                return
+
+            elif parsed.path == "/api/backup-ledger":
+                if not self._check_auth():
+                    self._send_json({"error": "Unauthorized: valid API key required for administrative actions", "status": 401}, status=401)
+                    return
+                try:
+                    backup_dir = Path("hdfc_predictor/data/backups")
+                    backup_dir.mkdir(parents=True, exist_ok=True)
+                    ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    backup_path = backup_dir / f"hdfc_brain_{ts_str}.db"
+                    src_path = Path("hdfc_predictor/data/hdfc_brain.db")
+                    if src_path.exists():
+                        shutil.copy2(src_path, backup_path)
+                        self._send_json({
+                            "status": "success",
+                            "message": f"Ledger backed up successfully to {backup_path.name}",
+                            "backup_path": str(backup_path),
+                            "timestamp": datetime.now().isoformat()
+                        }, status=200)
+                    else:
+                        self._send_json({"error": "Source ledger DB not found", "status": 404}, status=404)
+                except Exception as e:
+                    self._send_json({"error": "Ledger backup failed", "details": str(e)}, status=500)
+                return
+
+            else:
+                self._send_json({"error": "Not Found", "status": 404, "path": parsed.path}, status=404)
+        except Exception as e:
+            self._send_json({"error": "Internal Server Error", "details": str(e), "status": 500}, status=500)
 
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):

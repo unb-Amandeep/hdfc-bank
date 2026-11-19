@@ -5,6 +5,7 @@ import unittest
 
 from hdfc_predictor.fair_value_and_regime import FairValueAndRegimeEngine, RegimeState, ArbitrationDirective
 from hdfc_predictor.fundamental_engine import FundamentalEngine
+from hdfc_predictor.trading_calendar import TradingCalendar
 
 
 class TestPhase5FairValueAndRegime(unittest.TestCase):
@@ -84,7 +85,8 @@ class TestPhase5FairValueAndRegime(unittest.TestCase):
         self.assertEqual(directive.execution_order_type, "LIMIT_ORDER_PULLBACK")
         self.assertEqual(directive.overnight_gift_nifty_bias, "BEARISH")
         self.assertEqual(directive.thesis_break_status, "INTACT")
-        self.assertIn("2026-11-24", directive.order_expiry_date)
+        expected_expiry_iso, _ = TradingCalendar.calculate_order_expiry(trading_days=5)
+        self.assertIn(expected_expiry_iso, directive.order_expiry_date)
         self.assertIn("cancel the pending limit order", directive.order_recheck_rule)
         # Pullback limit zone must be strictly below current market price
         self.assertLess(directive.limit_entry_zone[1], 814.0)

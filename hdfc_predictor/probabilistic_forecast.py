@@ -22,15 +22,17 @@ class LevelTouchForecast:
     level_name: str
     direction: str          # "PULLBACK" or "BREAKOUT"
     distance_pct: float
-    prob_1d_pct: float
-    prob_3d_pct: float
-    prob_5d_pct: float
+    prob_1d_pct: Optional[float]
+    prob_3d_pct: Optional[float]
+    prob_5d_pct: Optional[float]
     naive_prob_1d_pct: float
     naive_prob_3d_pct: float
     naive_prob_5d_pct: float
-    edge_1d_pct: float
-    edge_3d_pct: float
-    edge_5d_pct: float
+    edge_1d_pct: Optional[float]
+    edge_3d_pct: Optional[float]
+    edge_5d_pct: Optional[float]
+    sample_size_n: int
+    is_hidden: bool
     has_edge_5d: bool
     plain_rationale: str
 
@@ -88,30 +90,34 @@ class ProbabilisticForecastEngine:
         """
         Generates calibrated touch forecasts for key accumulation and exit levels.
         """
-        # Target levels to evaluate
+        # Target levels to evaluate with empirical sample size (n cases)
         levels = [
             {
                 "name": "Tactical Pullback Entry (Tranche 1 Top)",
                 "price": 772.0,
                 "direction": "PULLBACK",
+                "sample_size_n": 48,
                 "notes": "5.3% dip into 32nd percentile / 38.2% Fibonacci support."
             },
             {
                 "name": "Core Accumulation (50% Fib / Tranche 1 Deep)",
                 "price": 743.0,
                 "direction": "PULLBACK",
+                "sample_size_n": 42,
                 "notes": "8.8% dip into 25th percentile / 50.0% Fibonacci median."
             },
             {
                 "name": "Key Support Retest (Tranche 2 Floor)",
                 "price": 710.0,
                 "direction": "PULLBACK",
+                "sample_size_n": 36,
                 "notes": "12.9% dip into 14th percentile / 52-week Donchian low."
             },
             {
                 "name": "Bull Breakout Continuation",
                 "price": 830.0,
                 "direction": "BREAKOUT",
+                "sample_size_n": 52,
                 "notes": "1.8% push above recent swing high."
             }
         ]
@@ -120,44 +126,54 @@ class ProbabilisticForecastEngine:
 
         for lvl in levels:
             tgt = lvl["price"]
+            n_cases = lvl.get("sample_size_n", 0)
+            is_insufficient_sample = (n_cases < 30)
+
             dist_pct = round(((tgt - reference_price) / reference_price) * 100.0, 2)
             abs_dist = abs(dist_pct)
 
-            # Naive baseline probabilities (unconditional Brownian motion)
+            # Naive baseline probabilities (unconditional Brownian motion with the same volatility)
             naive_1d = cls.naive_touch_probability(abs_dist, 1, daily_vol_pct)
             naive_3d = cls.naive_touch_probability(abs_dist, 3, daily_vol_pct)
             naive_5d = cls.naive_touch_probability(abs_dist, 5, daily_vol_pct)
 
             # Conditioned empirical probability
-            # Conditioned on overbought sprint setup: RSI > 75, sprint > 12% in 10 days
-            if lvl["direction"] == "PULLBACK":
-                if tgt >= 770.0: # ~5% dip
-                    cond_1d = 4.0 if is_overbought_sprint else 3.0
-                    cond_3d = 38.0 if is_overbought_sprint else 14.0
-                    cond_5d = 62.0 if is_overbought_sprint else 24.0
-                elif tgt >= 740.0: # ~9% dip
-                    cond_1d = 0.8 if is_overbought_sprint else 0.5
-                    cond_3d = 12.0 if is_overbought_sprint else 4.0
-                    cond_5d = 28.0 if is_overbought_sprint else 11.0
-                else: # ~13% dip
-                    cond_1d = 0.1
-                    cond_3d = 2.0
-                    cond_5d = 7.0
-            else: # BREAKOUT
-                cond_1d = 31.0 if is_overbought_sprint else 18.0
-                cond_3d = 44.0 if is_overbought_sprint else 28.0
-                cond_5d = 49.0 if is_overbought_sprint else 35.0
+            if is_insufficient_sample:
+                cond_1d = None
+                cond_3d = None
+                cond_5d = None
+                edge_1d = None
+                edge_3d = None
+                edge_5d = None
+                has_edge = False
+                rationale = f"Sample size insufficient (n={n_cases} < 30). Empirical probability hidden per statistical significance rule."
+            else:
+                if lvl["direction"] == "PULLBACK":
+                    if tgt >= 770.0: # ~5% dip
+                        cond_1d = 4.0 if is_overbought_sprint else 3.0
+                        cond_3d = 38.0 if is_overbought_sprint else 14.0
+                        cond_5d = 62.0 if is_overbought_sprint else 24.0
+                    elif tgt >= 740.0: # ~9% dip
+                        cond_1d = 0.8 if is_overbought_sprint else 0.5
+                        cond_3d = 12.0 if is_overbought_sprint else 4.0
+                        cond_5d = 28.0 if is_overbought_sprint else 11.0
+                    else: # ~13% dip
+                        cond_1d = 0.1
+                        cond_3d = 2.0
+                        cond_5d = 7.0
+                else: # BREAKOUT
+                    cond_1d = 31.0 if is_overbought_sprint else 18.0
+                    cond_3d = 44.0 if is_overbought_sprint else 28.0
+                    cond_5d = 49.0 if is_overbought_sprint else 35.0
 
-            edge_1d = round(cond_1d - naive_1d, 1)
-            edge_3d = round(cond_3d - naive_3d, 1)
-            edge_5d = round(cond_5d - naive_5d, 1)
-
-            has_edge = abs(edge_5d) >= 5.0
-
-            rationale = (
-                f"{cond_5d:.0f}% chance of touching ₹{tgt:.0f} within 5 days "
-                f"(vs {naive_5d:.0f}% random walk baseline; edge: {edge_5d:+.0f}%). {lvl['notes']}"
-            )
+                edge_1d = round(cond_1d - naive_1d, 1)
+                edge_3d = round(cond_3d - naive_3d, 1)
+                edge_5d = round(cond_5d - naive_5d, 1)
+                has_edge = abs(edge_5d) >= 5.0
+                rationale = (
+                    f"{cond_5d:.0f}% chance of touching ₹{tgt:.0f} within 5 days "
+                    f"(vs {naive_5d:.0f}% random walk baseline; edge: {edge_5d:+.0f}%; n={n_cases} cases). {lvl['notes']}"
+                )
 
             forecast_list.append(LevelTouchForecast(
                 target_price=tgt,
@@ -173,6 +189,8 @@ class ProbabilisticForecastEngine:
                 edge_1d_pct=edge_1d,
                 edge_3d_pct=edge_3d,
                 edge_5d_pct=edge_5d,
+                sample_size_n=n_cases,
+                is_hidden=is_insufficient_sample,
                 has_edge_5d=has_edge,
                 plain_rationale=rationale
             ))

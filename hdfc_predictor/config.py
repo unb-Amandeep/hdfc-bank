@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = Path(os.getenv("HDFC_DATA_DIR", BASE_DIR / "data"))
 LOGS_DIR = BASE_DIR / "logs"
 REPORTS_DIR = BASE_DIR / "reports"
 
