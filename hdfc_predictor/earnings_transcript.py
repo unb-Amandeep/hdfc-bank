@@ -67,9 +67,9 @@ class EarningsTranscriptEngine:
             "excerpt": "Total deposits grew at 18.8% YoY to reach Rs 30,40,000 crore, while gross advances grew at 16.3% YoY, progressing the glide path to moderate the credit to deposit ratio.",
             "date_made": "2026-10-17",
             "as_of": "2026-09-30",
-            "actual": "Deposits +18.8% vs Advances +16.3% (Δ +2.5% spread)",
+            "actual": "Deposits +18.8% vs Advances +16.3% (PAT grew 4.7% YoY)",
             "eval": lambda: "DELIVERED",
-            "notes": "Healthy deposit mobilization (+18.8% YoY) comfortably outpaced advance expansion, rebalancing assets."
+            "notes": "Healthy deposit mobilization (+18.8% YoY on ₹30.4L Cr period-end deposits; avg deposits ₹31.66L Cr). Note: Aided by FCNR(B) inflows; profit growth (+4.7%) lagged deposit growth (+18.8%) reflecting margin compression."
         },
         {
             "id": "PR_02",
@@ -133,13 +133,13 @@ class EarningsTranscriptEngine:
             "commitment_type": "Management Commitment",
             "page": "Page 4",
             "metric": "Succession & Governance Stability",
-            "target": "Management Guidance: Orderly leadership succession and management stability",
+            "target": "Management Guidance: Orderly leadership succession and governance continuity",
             "excerpt": "The Board approved the succession transition with Anup Bagchi appointed to take charge as Managing Director and CEO on October 27, 2026.",
             "date_made": "2026-10-17",
             "as_of": "2026-09-30",
             "actual": "Anup Bagchi appointed MD & CEO effective October 27, 2026",
-            "eval": lambda: "DELIVERED",
-            "notes": "Leadership succession successfully settled with clear strategic continuity."
+            "eval": lambda: "IN PROGRESS",
+            "notes": "Succession transition active: Anup Bagchi took charge Oct 27, 2026. Governance continuity, post-merger integration, and investor trust remain ongoing key tests."
         }
     ]
 

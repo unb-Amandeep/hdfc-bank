@@ -81,23 +81,6 @@ class TrackRecordEngine:
         simulated_records: List[LedgerRowSummary] = []
         seen_live_dates = set()
 
-        # Enforce canonical ledger rule: 1 canonical [LIVE] record per trading day (locked at 2:00 PM IST)
-        # Any test re-runs, intraday drafts, or microsecond timestamps are classified as [SIMULATED]
-        import hashlib
-        today_hash = hashlib.sha256(b"2026-11-18 14:00:00 IST|HDFCBANK.NS|WAIT|814.95").hexdigest()
-        canonical_today = LedgerRowSummary(
-            id=101,
-            timestamp="2026-11-18 14:00:00 IST",
-            decision_action="WAIT",
-            exact_shares=0,
-            exact_cash_amount=0.0,
-            model_version="v2.5-audit",
-            execution_type="Live Decision",
-            row_hash=today_hash
-        )
-        live_records.append(canonical_today)
-        seen_live_dates.add("2026-11-18")
-
         for r in reversed(ledger_rows):
             row_id = r["id"]
             ts = r["timestamp"]

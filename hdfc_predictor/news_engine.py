@@ -59,6 +59,7 @@ class NewsEngine:
         self.company_name = settings.company_name
         self.finnhub_key = settings.finnhub_api_key
         self.alpha_key = settings.alphavantage_api_key
+        self._av_sentiment_disabled = False
 
     def fetch_google_news_rss(self, query: str = "HDFC Bank stock NSE") -> List[Dict[str, Any]]:
         """
@@ -134,17 +135,21 @@ class NewsEngine:
     def fetch_alphavantage_sentiment(self) -> Optional[Dict[str, Any]]:
         """
         Fetches sentiment scores directly from Alpha Vantage if key provided.
+        Skips if free tier returns premium endpoint restriction to avoid wasting quota.
         """
-        if not self.alpha_key:
+        if not self.alpha_key or getattr(self, "_av_sentiment_disabled", False):
             return None
         url = (
             f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&"
             f"tickers={settings.backup_symbol}&apikey={self.alpha_key}"
         )
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "HDFC-Predictor/1.0"})
-            with urllib.request.urlopen(req, timeout=2.0) as response:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=3.0) as response:
                 data = json.loads(response.read().decode())
+                if "Information" in data and "premium" in data.get("Information", "").lower():
+                    self._av_sentiment_disabled = True
+                    return None
                 feed = data.get("feed", [])
                 if feed:
                     scores = [float(item.get("overall_sentiment_score", 0.0)) for item in feed[:10]]

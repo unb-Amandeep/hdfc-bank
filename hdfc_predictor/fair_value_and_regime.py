@@ -61,6 +61,10 @@ class SingleDecisionObject:
     disagreements: List[str]           # Surfaced disagreements among inputs
     arbitration_rationale: str
     order_directive: Dict[str, Any]
+    precedence_tier: str = "Precedence 5: Default State"
+    eligible_tranche_pct: float = 0.0
+    current_position_weight_pct: float = 8.5
+    target_position_weight_pct: float = 12.0
     feed_source: Optional[str] = None
     feed_timestamp: Optional[str] = None
     feed_status: Optional[str] = None
@@ -227,62 +231,37 @@ class FairValueAndRegimeEngine:
             is_blackout = True
             blackout_msg = f"EVENT BLACKOUT: RBI MPC Monetary Policy decision in {days_to_rbi_mpc} days."
 
-        # 2. Thesis Break Check
-        if fundamental_score < 50:
+        # Ingest 4-Flag Thesis Health
+        thesis_rep = FundamentalEngine.get_thesis_health_report()
+        thesis_state = thesis_rep.overall_thesis_state
+
+        if thesis_state == "HARD_INVALIDATION" or fundamental_score < 50:
             thesis_status = "INVALIDATED"
-            what_change = "Thesis invalidated due to fundamental balance-sheet rot. Freeze all accumulation."
-        elif current_pb >= 2.68 or current_price >= 1058.0:
+            what_change = "Thesis invalidated due to persistent balance-sheet deterioration across 2 quarters. Freeze all accumulation."
+        elif current_pb >= 2.50 or current_price >= 995.0:
             thesis_status = "VALUATION_EXIT"
-            what_change = "P/B reached Bull Case fair value (2.68x, ~₹1,058). Post-merger cyclical discount fully closed; initiate scheduled profit-taking."
+            what_change = "P/B reached Bull Case valuation ceiling (>=2.50x, ~₹995+). Cyclical discount fully closed; initiate profit-taking."
+        elif thesis_state == "WEAKENING_THESIS" and fundamental_score < 75:
+            thesis_status = "WEAKENING"
+            what_change = "Thesis weakening: 2 Amber flags active (Structural CASA + System C/D spread). Pause market adds; buy only deep limit dips."
         else:
             thesis_status = "INTACT"
             what_change = "A quarterly drop in deposit growth below 11% YoY or Gross NPA spiking > 1.6% would invalidate the thesis and freeze tranches."
 
-        # 3. Conflict Detection & Arbitration
-        primary_wants_accumulate = bottom_opportunity_score >= 70
-        tactical_wants_sell_or_trim = "SELL" in tactical_action or "TRIM" in tactical_action
-
-        if is_blackout:
-            primary_dec = "HOLD_EVENT_BLACKOUT"
-            tactical_tim = "FREEZE_ORDERS"
-            order_type = "HOLD_OFF"
-            has_conflict = False
-            conflict_exp = blackout_msg
-            zone = (0.0, 0.0)
-
-        elif primary_wants_accumulate and tactical_wants_sell_or_trim:
-            primary_dec = "ACCUMULATE_IN_TRANCHES (20% Target)"
-            tactical_tim = "WAIT_FOR_LIMIT_PULLBACK (Do Not Market-Buy)"
-            order_type = "LIMIT_ORDER_PULLBACK"
-            has_conflict = True
-            conflict_exp = (
-                f"TIER CONFLICT SURFACED: Primary Cyclical Tier is in Deep Value Zone (Score {bottom_opportunity_score}/100), "
-                f"but Tactical 2:00 PM Tier flags short-term overbought exhaustion ({tactical_action}). "
-                f"ARBITRATION RESOLUTION: Primary approves capital tranche (20%), but Tactical restricts execution to a LIMIT ORDER "
-                f"near the pullback support zone (₹742 - ₹772) instead of buying at current market price."
-            )
-            zone = (round(current_price * 0.911, 1), round(current_price * 0.947, 1))
-
-        elif primary_wants_accumulate and not tactical_wants_sell_or_trim:
-            primary_dec = "ACCUMULATE_IN_TRANCHES (20% Target)"
-            tactical_tim = "EXECUTE_TRANCHE"
-            order_type = "MARKET_TRANCHE"
-            has_conflict = False
-            conflict_exp = None
-            zone = (round(current_price * 0.98, 1), round(current_price * 1.01, 1))
-
+        # Setup standard pullback zone strictly below current market price
+        if current_price >= 835.0:
+            zone = (805.0, 822.0)
         else:
-            primary_dec = "PRESERVE_CASH"
-            tactical_tim = "HOLD_OFF"
-            order_type = "HOLD_OFF"
-            has_conflict = False
-            conflict_exp = None
-            zone = (0.0, 0.0)
+            zone = (round(current_price * 0.915, 1), round(current_price * 0.952, 1))
 
-        gift_bias = "BULLISH" if gift_nifty_change_pct > 0.15 else ("BEARISH" if gift_nifty_change_pct < -0.15 else "NEUTRAL")
+        # Precedence Hierarchy Evaluation:
+        # Precedence 1: Hard Thesis Invalidation -> REDUCE / EXIT
+        # Precedence 2: Weakening Thesis -> PAUSE_ADDS (No market chase)
+        # Precedence 3: Valuation Ceiling (P/B >= 2.50x) -> TRIM / BOOK_PROFITS
+        # Precedence 4: Eligible Entries (Deep Value 40%, Distress 40%, Pullback 20%, Breakout Starter 10%)
+        # Precedence 5: Default -> HOLD / WAIT (0% new tranche)
+        # Precedence 6: Data feed circuit breaker -> Blocks execution if stale
 
-        # Canonical Action & Live Feed Safety Check
-        is_inside_buy_zone = (zone[0] <= current_price <= zone[1]) if zone != (0.0, 0.0) else False
         exp_iso, exp_lbl = TradingCalendar.calculate_order_expiry(trading_days=5)
         expiry_date = f"{exp_iso} (5 Trading Days)"
         recheck_rule = (
@@ -290,46 +269,126 @@ class FairValueAndRegimeEngine:
             "cancel the pending limit order, re-evaluate balance-sheet valuation, and reset the limit zone."
         )
 
-        # Single Canonical Decision: Strictly WAIT / BUY / SELL
-        if not is_live_data:
-            canonical_action = "WAIT"
-            trading_blocked = True
-            trading_blocked_reason = "DATA STALE - not live. Real-time licensed/broker feed offline; BUY/SELL verdicts blocked."
-            data_staleness_warning = "DATA STALE - not live"
-            verdict_subtitle = f"DATA STALE - not live ({feed_source} @ {feed_timestamp}). Trading blocked."
-            action_headline = "WAIT: Price data is stale or offline. Trading execution blocked until live feed connects."
-        elif is_blackout:
+        precedence_tier = "Precedence 5: Default State"
+        eligible_tranche = 0.0
+
+        if is_blackout:
             canonical_action = "WAIT"
             trading_blocked = True
             trading_blocked_reason = blackout_msg
             data_staleness_warning = None
             verdict_subtitle = "Event blackout active. Orders frozen."
             action_headline = "WAIT: Binary regulatory event within 48h. Orders frozen."
-        elif thesis_status in ("INVALIDATED", "VALUATION_EXIT"):
+            precedence_tier = "Precedence 6: Event Blackout"
+            order_type = "HOLD_OFF"
+
+        elif not is_live_data:
+            canonical_action = "WAIT"
+            trading_blocked = True
+            trading_blocked_reason = "DATA STALE - not live. Real-time licensed/broker feed offline; BUY/SELL verdicts blocked."
+            data_staleness_warning = "DATA STALE - not live"
+            verdict_subtitle = f"DATA STALE - not live ({feed_source} @ {feed_timestamp}). Trading blocked."
+            action_headline = "WAIT: Price data is stale or offline. Trading execution blocked until live feed connects."
+            precedence_tier = "Precedence 6: Circuit Breaker"
+            order_type = "LIMIT_ORDER_PULLBACK" if ("SELL" in tactical_action or "TRIM" in tactical_action or current_price > zone[1]) else "HOLD_OFF"
+
+        elif thesis_status == "INVALIDATED":
+            # Precedence 1: Hard Thesis Invalidation overrides everything
             canonical_action = "SELL"
             trading_blocked = False
             trading_blocked_reason = None
             data_staleness_warning = None
-            verdict_subtitle = "Thesis invalidated or target reached. Take profits / exit."
-            action_headline = "SELL: Valuation ceiling reached or balance-sheet threshold breached."
-        elif is_inside_buy_zone:
+            verdict_subtitle = "Thesis hard invalidation (2+ Red Flags for 2Q). Reduce position."
+            action_headline = "REDUCE / EXIT: Fundamental Thesis Hard Invalidation."
+            precedence_tier = "Precedence 1: Hard Thesis Invalidation"
+            order_type = "MARKET_REDUCE"
+            eligible_tranche = 0.0
+
+        elif thesis_status == "VALUATION_EXIT":
+            # Precedence 3: Valuation Ceiling reached
+            canonical_action = "SELL"
+            trading_blocked = False
+            trading_blocked_reason = None
+            data_staleness_warning = None
+            verdict_subtitle = f"P/B expanded to {current_pb:.2f}x (Valuation ceiling >=2.50x). Book profits."
+            action_headline = "TRIM / BOOK_PROFITS: Valuation Ceiling Reached."
+            precedence_tier = "Precedence 3: Valuation Ceiling"
+            order_type = "LIMIT_TRIM"
+            eligible_tranche = 0.0
+
+        elif current_price <= 695.0:
+            # Precedence 4: Deep Value Base Entry
             canonical_action = "BUY"
             trading_blocked = False
             trading_blocked_reason = None
             data_staleness_warning = None
-            verdict_subtitle = f"Price (₹{current_price:.2f}) inside accumulation zone (₹{zone[0]:.0f}–₹{zone[1]:.0f}). Execute limit tranche."
-            action_headline = f"BUY: Price inside derived accumulation band (₹{zone[0]:.0f}–₹{zone[1]:.0f})."
+            eligible_tranche = 40.0
+            verdict_subtitle = f"Price (₹{current_price:.2f}) at post-merger cyclical low (~1.75x P/B). Deploy 40% deep value tranche."
+            action_headline = "BUY · Deep Value Base (40% Tranche Allocation)."
+            precedence_tier = "Precedence 4: Deep Value Base Entry (40%)"
+            order_type = "LIMIT_ORDER_DEEP_VALUE"
+            zone = (670.0, 695.0)
+
+        elif current_price <= 735.0:
+            # Precedence 4: Distress Floor Entry
+            canonical_action = "BUY"
+            trading_blocked = False
+            trading_blocked_reason = None
+            data_staleness_warning = None
+            eligible_tranche = 40.0
+            verdict_subtitle = f"Price (₹{current_price:.2f}) at 50% Fib support floor. Deploy 40% core accumulation tranche."
+            action_headline = "BUY · Distress Support Floor (40% Tranche Allocation)."
+            precedence_tier = "Precedence 4: Distress Support Floor (40%)"
+            order_type = "LIMIT_ORDER_DISTRESS"
+            zone = (710.0, 735.0)
+
+        elif zone[0] <= current_price <= zone[1]:
+            # Precedence 4: Tactical Pullback Entry
+            canonical_action = "BUY"
+            trading_blocked = False
+            trading_blocked_reason = None
+            data_staleness_warning = None
+            eligible_tranche = 20.0
+            verdict_subtitle = f"Price (₹{current_price:.2f}) inside tactical pullback band (₹{zone[0]:.0f}–₹{zone[1]:.0f}). Execute 20% tranche."
+            action_headline = "BUY · Tactical Pullback Entry (20% Tranche Allocation)."
+            precedence_tier = "Precedence 4: Tactical Pullback Entry (20%)"
+            order_type = "LIMIT_ORDER_PULLBACK"
+
         else:
+            # Precedence 5: Default State (WAIT - No new tranche today)
             canonical_action = "WAIT"
             trading_blocked = False
             trading_blocked_reason = None
             data_staleness_warning = None
-            verdict_subtitle = f"Price (₹{current_price:.2f}) is above buy zone (₹{zone[0]:.0f}–₹{zone[1]:.0f}). Wait for pullback."
-            action_headline = "WAIT: Momentum overbought (+16.8% sprint). Set limit order inside derived buy zone."
+            eligible_tranche = 0.0
+            order_type = "LIMIT_ORDER_PULLBACK"
+            precedence_tier = "Precedence 5: Default State (WAIT · No new tranche today)"
+            verdict_subtitle = f"Price (₹{current_price:.2f}, P/B {current_pb:.2f}x) is at Fair Value median above pullback band (₹{zone[0]:.0f}–₹{zone[1]:.0f}). Place limit order; do not chase."
+            action_headline = "WAIT · No new tranche today (0% allocation). Price at Fair Value median."
+
+        has_conflict = (
+            ("SELL" in tactical_action or "TRIM" in tactical_action or "WAIT" in tactical_action or current_price > zone[1])
+            and bottom_opportunity_score >= 70
+        )
+        conflict_exp = (
+            f"TIER CONFLICT SURFACED: Primary Cyclical Valuation input signals Accumulation (Score {bottom_opportunity_score}/100), "
+            f"but Tactical Momentum signals short-term overbought sprint ({tactical_action} at ₹{current_price:.2f}). "
+            f"ARBITRATION RESOLUTION: Primary approves capital allocation, but Tactical restricts execution to a LIMIT ORDER "
+            f"near the pullback support band (₹{zone[0]:.0f}–₹{zone[1]:.0f}) instead of chasing at current market price."
+        ) if has_conflict else None
+
+        primary_dec = f"ACCUMULATE_IN_TRANCHES ({eligible_tranche:.0f}% Target)" if eligible_tranche > 0 else "PRESERVE_CASH (0% Tranche)"
+        tactical_tim = "WAIT_FOR_LIMIT_PULLBACK" if canonical_action == "WAIT" else "EXECUTE_TRANCHE"
+        gift_bias = "BULLISH" if gift_nifty_change_pct > 0.15 else ("BEARISH" if gift_nifty_change_pct < -0.15 else "NEUTRAL")
+
+        primary_wants_accumulate = bottom_opportunity_score >= 70
+        tactical_blocks_market_buy = ("WAIT" in tactical_action or "SELL" in tactical_action or "TRIM" in tactical_action or current_price > zone[1])
 
         # Surfacing Disagreements among Advisory Inputs
         disagreements = []
-        if primary_wants_accumulate and tactical_wants_sell_or_trim:
+        if has_conflict and conflict_exp:
+            disagreements.append(conflict_exp)
+        elif primary_wants_accumulate and tactical_blocks_market_buy:
             disagreements.append(
                 f"Cyclical Bottom Detector signals Accumulation (Score {bottom_opportunity_score}/100) "
                 f"while Tactical ML signals Short-Term Exhaustion ({tactical_action}). "
@@ -390,6 +449,10 @@ class FairValueAndRegimeEngine:
             disagreements=disagreements,
             arbitration_rationale=conflict_exp or "All input models aligned on disciplined capital preservation.",
             order_directive=order_dir,
+            precedence_tier=precedence_tier,
+            eligible_tranche_pct=eligible_tranche,
+            current_position_weight_pct=8.5,
+            target_position_weight_pct=15.0,
             feed_source=feed_source,
             feed_timestamp=feed_timestamp,
             feed_status=feed_status

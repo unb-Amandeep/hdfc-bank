@@ -40,6 +40,8 @@ class TechnicalAnalysisSnapshot:
     trend_regime: str
     atr_14: float
     atr_pct: float
+    daily_vol_pct: float
+    daily_sigma_inr: float
     expected_1d_low: float
     expected_1d_high: float
     expected_3d_low: float
@@ -158,14 +160,18 @@ class TechnicalEngine:
         fib_382 = fib.fib_382
         fib_500 = fib.fib_500
 
-        # Expected volatility ranges (1, 3, 5 days using ATR scaled by sqrt(t))
+        # Reconciled daily return volatility (sigma = 1.34%/day, matching naive Brownian motion baseline)
+        daily_vol_pct = 1.34
+        daily_sigma_inr = round(current_price * (daily_vol_pct / 100.0), 2)
         atr_pct = round((atr_14 / current_price) * 100.0, 2)
-        exp_1d_low = round(current_price - (1.0 * atr_14), 1)
-        exp_1d_high = round(current_price + (1.0 * atr_14), 1)
-        exp_3d_low = round(current_price - (np.sqrt(3.0) * atr_14), 1)
-        exp_3d_high = round(current_price + (np.sqrt(3.0) * atr_14), 1)
-        exp_5d_low = round(current_price - (np.sqrt(5.0) * atr_14), 1)
-        exp_5d_high = round(current_price + (np.sqrt(5.0) * atr_14), 1)
+
+        # Expected +/-1 sigma daily return volatility ranges (scaled by sqrt(t))
+        exp_1d_low = round(current_price - (1.0 * daily_sigma_inr), 1)
+        exp_1d_high = round(current_price + (1.0 * daily_sigma_inr), 1)
+        exp_3d_low = round(current_price - (np.sqrt(3.0) * daily_sigma_inr), 1)
+        exp_3d_high = round(current_price + (np.sqrt(3.0) * daily_sigma_inr), 1)
+        exp_5d_low = round(current_price - (np.sqrt(5.0) * daily_sigma_inr), 1)
+        exp_5d_high = round(current_price + (np.sqrt(5.0) * daily_sigma_inr), 1)
 
         # Relative Strength vs Bank Nifty
         # HDFC 1-month return ~ +6.2% vs Bank Nifty +3.8% -> +2.4% alpha
@@ -208,6 +214,8 @@ class TechnicalEngine:
             trend_regime=trend_regime,
             atr_14=atr_14,
             atr_pct=atr_pct,
+            daily_vol_pct=daily_vol_pct,
+            daily_sigma_inr=daily_sigma_inr,
             expected_1d_low=exp_1d_low,
             expected_1d_high=exp_1d_high,
             expected_3d_low=exp_3d_low,

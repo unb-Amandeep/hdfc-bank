@@ -24,11 +24,15 @@ FILING_METRICS: Dict[str, Any] = {
     "book_value_per_share": 394.80,
     "total_assets_cr": 3820000.0,
 
-    # Deposits & CASA
+    # Deposits & CASA (Dual Reconciliation: Period-End vs Daily Average)
     "total_deposits_cr": 3040000.0,
+    "average_deposits_cr": 3166400.0,
     "casa_deposits_cr": 1155200.0,
     "term_deposits_cr": 1884800.0,
-    "casa_ratio_pct": 38.0,          # 11,55,200 / 30,40,000 = 38.0%
+    "casa_ratio_pct": 38.0,          # Period-end: 11,55,200 / 30,40,000 = 38.0%
+    "period_end_casa_ratio_pct": 38.0,
+    "average_casa_ratio_pct": 31.6,   # Daily balance sheet average CASA = 31.6%
+    "casa_ratio_display": "38.0% (Period-end) / 31.6% (Daily Avg)",
     "term_deposit_ratio_pct": 62.0,
     "deposit_growth_yoy_pct": 18.8,
     "deposit_2y_cagr_pct": 10.3,

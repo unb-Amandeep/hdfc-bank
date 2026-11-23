@@ -93,8 +93,8 @@ class MacroMarketEngine:
             net_combined_cr=net_inst,
             fii_index_futures_net_cr=-420.0,
             flow_verdict="DII Absorption (+₹2,450 Cr) offsetting foreign institutional profit-taking.",
-            source="NSE / NSDL Institutional Activity Report",
-            timestamp="2026-11-18 18:30 IST"
+            source="NSE / NSDL Institutional Activity Report (EOD Reference)",
+            timestamp="2026-11-17 18:30 IST"
         )
 
         # 2. India VIX Volatility Index
@@ -104,20 +104,20 @@ class MacroMarketEngine:
             change_pct=-2.94,
             volatility_regime="LOW_TO_MODERATE (Sub-16)",
             risk_implication="Benign volatility regime favors staged limit accumulation without tail shock panic.",
-            source="NSE India VIX Real-Time Index",
-            timestamp="2026-11-18 15:30 IST"
+            source="NSE India VIX (EOD Reference)",
+            timestamp="2026-11-17 15:30 IST"
         )
 
         # 3. Bank Nifty Trend
         bn = BankNiftyTrendRecord(
-            index_level=51840.0,
+            index_level=62324.55,
             change_pct=0.82,
-            dma_20=51200.0,
-            dma_50=50650.0,
-            trend_state="BULLISH_CONSOLIDATION (Index > 20 DMA > 50 DMA)",
+            dma_20=61450.0,
+            dma_50=60800.0,
+            trend_state="ALL-TIME HIGH / BULLISH REGIME (Index > 20 DMA > 50 DMA)",
             hdfc_beta=1.14,
-            source="NSE Nifty Bank Benchmark",
-            timestamp="2026-11-18 15:30 IST"
+            source="NSE Nifty Bank Benchmark (EOD Reference)",
+            timestamp="2026-11-17 15:30 IST"
         )
 
         # 4. HDFCBANK Options Open Interest & Max Pain
@@ -131,8 +131,8 @@ class MacroMarketEngine:
             major_put_oi_contracts=14800000,
             atm_implied_vol_pct=16.4,
             options_bias="Range-bound with ceiling at ₹840 Call and floor at ₹760 Put; Max Pain aligns with ₹780.",
-            source="NSE HDFCBANK Derivatives Option Chain (Monthly Expiry)",
-            timestamp="2026-11-18 15:30 IST"
+            source="NSE HDFCBANK Derivatives Option Chain (EOD Reference)",
+            timestamp="2026-11-17 15:30 IST"
         )
 
         macro_verdict = (
@@ -142,7 +142,7 @@ class MacroMarketEngine:
         )
 
         return MacroMarketSnapshot(
-            as_of_date="2026-11-18",
+            as_of_date="2026-11-17",
             institutional_flows=flows,
             india_vix=vix,
             bank_nifty=bn,

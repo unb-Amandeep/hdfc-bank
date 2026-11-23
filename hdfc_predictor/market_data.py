@@ -5,7 +5,9 @@ Fetches historical daily prices and real-time intraday quotes using free APIs
 """
 from datetime import datetime, timedelta
 import json
+import logging
 import os
+import time
 from typing import Dict, Any, Optional, Tuple
 import urllib.request
 import urllib.parse
@@ -13,6 +15,15 @@ import pandas as pd
 import numpy as np
 
 from hdfc_predictor.config import settings
+
+logger = logging.getLogger(__name__)
+
+# Module-level rate limiting and TTL caching for Alpha Vantage
+# Free tier enforces: 1 request/second burst limit, 25 requests/day standard limit
+_AV_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_AV_LAST_CALL_TS: float = 0.0
+_AV_MIN_INTERVAL: float = 2.0  # Safe 2.0s delay between calls to strictly enforce Alpha Vantage burst limit
+_AV_QUOTE_TTL: float = 120.0   # 2 minutes TTL cache to preserve 25 requests/day limit
 
 
 class MarketDataProvider:
@@ -22,41 +33,109 @@ class MarketDataProvider:
         self.finnhub_key = settings.finnhub_api_key
         self.alpha_key = settings.alphavantage_api_key
 
-    def get_alphavantage_quote(self, symbol: str = "HDB") -> Optional[Dict[str, Any]]:
+    @staticmethod
+    def map_to_alphavantage_symbol(symbol: str) -> str:
         """
-        Fetches live Global Quote from Alpha Vantage for HDFC Bank ADR (HDB).
-        Provides international institutional price confirmation.
+        Translates symbols to the format recognized by Alpha Vantage.
+        Alpha Vantage does not recognize .NS (National Stock Exchange).
+        Indian equities must use the Bombay Stock Exchange (.BSE) suffix.
+        ADR ticker (HDB) is kept as-is.
         """
+        clean = (symbol or "").strip().upper()
+        if clean in ("HDB", "HDB.US"):
+            return "HDB"
+        if clean.endswith(".NS"):
+            return clean[:-3] + ".BSE"
+        if clean.endswith(".BSE"):
+            return clean
+        indian_symbols = {"HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK"}
+        if clean in indian_symbols:
+            return f"{clean}.BSE"
+        return clean
+
+    def get_alphavantage_quote(self, symbol: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Fetches live Global Quote from Alpha Vantage for a given symbol.
+        Automatically maps Indian symbols (.NS -> .BSE) and respects free-tier
+        burst limits (1 req/sec) and daily quotas (25 req/day) via caching.
+        """
+        global _AV_LAST_CALL_TS, _AV_CACHE
+
         if not self.alpha_key:
             return None
-        url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={self.alpha_key}"
+
+        sym = symbol or self.symbol
+        av_symbol = self.map_to_alphavantage_symbol(sym)
+        now_ts = time.time()
+
+        # 1. Check TTL cache first
+        if av_symbol in _AV_CACHE:
+            cached_time, cached_val = _AV_CACHE[av_symbol]
+            if (now_ts - cached_time) < _AV_QUOTE_TTL:
+                return cached_val
+
+        # 2. Enforce minimum interval between network calls (1 req/sec limit)
+        elapsed = now_ts - _AV_LAST_CALL_TS
+        if elapsed < _AV_MIN_INTERVAL:
+            time.sleep(_AV_MIN_INTERVAL - elapsed)
+
+        url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={av_symbol}&apikey={self.alpha_key}"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "HDFC-Predictor/1.0"})
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+            )
+            _AV_LAST_CALL_TS = time.time()
             with urllib.request.urlopen(req, timeout=8) as res:
                 data = json.loads(res.read().decode())
+
+                # Check for rate limit or provider info message
+                if "Information" in data or "Note" in data:
+                    msg = data.get("Information") or data.get("Note")
+                    logger.warning(f"Alpha Vantage notice for {av_symbol}: {msg}")
+                    if av_symbol in _AV_CACHE:
+                        return _AV_CACHE[av_symbol][1]
+                    return None
+
                 gq = data.get("Global Quote", {})
                 if gq and "05. price" in gq:
                     price = float(gq["05. price"])
-                    chg_pct = float(gq.get("10. change percent", "0.0%").replace("%", ""))
-                    return {
-                        "symbol": symbol,
+                    prev_close = float(gq.get("08. previous close", price))
+                    chg = float(gq.get("09. change", price - prev_close))
+                    chg_pct_str = gq.get("10. change percent", "0.0%").replace("%", "").strip()
+                    try:
+                        chg_pct = float(chg_pct_str)
+                    except ValueError:
+                        chg_pct = round(((price - prev_close) / prev_close) * 100, 2) if prev_close else 0.0
+
+                    quote = {
+                        "symbol": av_symbol,
+                        "query_symbol": sym,
                         "price": round(price, 2),
                         "open": round(float(gq.get("02. open", price)), 2),
                         "high": round(float(gq.get("03. high", price)), 2),
                         "low": round(float(gq.get("04. low", price)), 2),
+                        "previous_close": round(prev_close, 2),
+                        "change": round(chg, 2),
                         "change_pct": round(chg_pct, 2),
                         "volume": int(gq.get("06. volume", 0)),
-                        "latest_day": gq.get("07. latest trading day"),
-                        "source": "Alpha Vantage (HDB)"
+                        "latest_day": gq.get("07. latest trading day", ""),
+                        "source": f"Alpha Vantage ({av_symbol})",
+                        "currency": "USD" if av_symbol == "HDB" else "INR"
                     }
-        except Exception:
-            pass
+                    _AV_CACHE[av_symbol] = (time.time(), quote)
+                    return quote
+        except Exception as e:
+            logger.warning(f"Alpha Vantage fetch error for {av_symbol}: {e}")
+            if av_symbol in _AV_CACHE:
+                return _AV_CACHE[av_symbol][1]
+
         return None
 
     def get_live_quote(self) -> Dict[str, Any]:
         """
         Fetches the latest real-time quote for HDFC Bank from licensed/broker feeds,
-        Finnhub, or Alpha Vantage.
+        Alpha Vantage, Finnhub, or yfinance.
         If live feed is unavailable, sets is_live=False, feed_status='DATA STALE - not live',
         and uses exact bar/feed timestamp (NEVER wall clock).
         """
@@ -75,7 +154,7 @@ class MarketDataProvider:
             "feed_status": "DATA STALE - not live",
             "source": "NSE Historical Verified Cache (Offline / Sandboxed)",
             "can_execute_orders": False,
-            "adr_quote": self.get_alphavantage_quote("HDB")
+            "adr_quote": None
         }
 
         # 1. Check for Licensed Broker Feed (Zerodha Kite Connect or Upstox)
@@ -96,13 +175,79 @@ class MarketDataProvider:
                             "feed_status": "LIVE",
                             "source": "Zerodha Kite Connect (NSE Real-Time)",
                             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST"),
-                            "can_execute_orders": True
+                            "can_execute_orders": True,
+                            "adr_quote": self.get_alphavantage_quote("HDB")
                         })
                         return quote_data
             except Exception:
                 pass
 
-        # 2. Try Finnhub real-time if API key configured
+        # 2. Try Real-Time NSE Quote via Yahoo Finance (fast_info)
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(self.symbol)
+            fast_info = ticker.fast_info
+            
+            curr = fast_info.last_price
+            prev_close = fast_info.previous_close
+            open_price = fast_info.open
+            high_price = fast_info.day_high
+            low_price = fast_info.day_low
+            vol = fast_info.last_volume
+
+            if curr is not None and not np.isnan(curr) and curr > 0:
+                chg = curr - prev_close if prev_close else 0.0
+                chg_pct = (chg / prev_close) * 100 if prev_close else 0.0
+                quote_data.update({
+                    "current_price": round(float(curr), 2),
+                    "day_open": round(float(open_price or curr), 2),
+                    "day_high": round(float(high_price or curr), 2),
+                    "day_low": round(float(low_price or curr), 2),
+                    "previous_close": round(float(prev_close or curr), 2),
+                    "change": round(float(chg), 2),
+                    "change_pct": round(float(chg_pct), 2),
+                    "volume": int(vol) if vol else 0,
+                    "is_live": True,
+                    "feed_status": "LIVE",
+                    "source": "NSE Real-Time (Yahoo Finance)",
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST"),
+                    "can_execute_orders": True,
+                    "adr_quote": self.get_alphavantage_quote("HDB")
+                })
+                return quote_data
+        except Exception:
+            pass
+
+        # 3. Fallback: Alpha Vantage Global Quote (BSE Indian Equities)
+        if self.alpha_key:
+            try:
+                av_quote = self.get_alphavantage_quote(self.symbol)
+                if av_quote and av_quote.get("price", 0) > 0:
+                    p = av_quote["price"]
+                    pc = av_quote.get("previous_close", p)
+                    latest_day = av_quote.get("latest_day", "")
+                    bar_ts = f"{latest_day} 15:30:00 IST" if latest_day else datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
+                    quote_data.update({
+                        "current_price": p,
+                        "day_open": av_quote.get("open", p),
+                        "day_high": av_quote.get("high", p),
+                        "day_low": av_quote.get("low", p),
+                        "previous_close": pc,
+                        "change": av_quote.get("change", round(p - pc, 2)),
+                        "change_pct": av_quote.get("change_pct", round(((p - pc) / pc) * 100, 2)),
+                        "volume": av_quote.get("volume", 0),
+                        "is_live": True,
+                        "feed_status": "LIVE",
+                        "source": av_quote.get("source", "Alpha Vantage (HDFCBANK.BSE)"),
+                        "timestamp": bar_ts,
+                        "can_execute_orders": True,
+                        "adr_quote": self.get_alphavantage_quote("HDB")
+                    })
+                    return quote_data
+            except Exception:
+                pass
+
+        # 4. Fallback: Finnhub real-time if API key configured
         if self.finnhub_key:
             try:
                 target_sym = self.backup_symbol if not self.symbol.endswith(".NS") else self.symbol
@@ -223,7 +368,36 @@ class MarketDataProvider:
         except Exception:
             pass
 
-        # 2. Seamless verified local cache fallback
+        # 2. Attempt Alpha Vantage historical daily if API key configured
+        if self.alpha_key:
+            try:
+                av_sym = self.map_to_alphavantage_symbol(self.symbol)
+                url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={av_sym}&apikey={self.alpha_key}&outputsize=compact"
+                req = urllib.request.Request(
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+                )
+                with urllib.request.urlopen(req, timeout=8) as res:
+                    data = json.loads(res.read().decode())
+                    ts_data = data.get("Time Series (Daily)", {})
+                    if ts_data and len(ts_data) >= 30:
+                        records = []
+                        for d_str, vals in ts_data.items():
+                            records.append({
+                                "Date": pd.to_datetime(d_str),
+                                "Open": float(vals["1. open"]),
+                                "High": float(vals["2. high"]),
+                                "Low": float(vals["3. low"]),
+                                "Close": float(vals["4. close"]),
+                                "Volume": int(vals["5. volume"])
+                            })
+                        av_df = pd.DataFrame(records).set_index("Date").sort_index()
+                        if not av_df.empty and len(av_df) >= 30:
+                            return av_df
+            except Exception:
+                pass
+
+        # 3. Seamless verified local cache fallback
         if cache_file.exists():
             try:
                 df = pd.read_csv(cache_file, index_col=0, parse_dates=True)

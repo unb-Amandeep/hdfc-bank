@@ -21,6 +21,8 @@ Her_Own_Light/
 *.jsx
 *.png
 hdfc_predictor/data/*.db
+*.db
+scratch/
 hdfc_predictor/data/*.pkl
 hdfc_predictor/data/backups/
 hdfc_predictor/logs/

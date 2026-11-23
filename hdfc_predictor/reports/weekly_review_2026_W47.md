@@ -34,8 +34,8 @@
 ## 4. Champion vs. Challenger Model Competition
 - **Champion Model**: Empirical Multi-Horizon Touch Model (Brier: 0.162)
 - **Challenger Model**: Adaptive Bayesian Decay Model (Brier: 0.148)
-- **Out-of-Sample Tracked Trading Days**: 2 / 60 days required
-- **Promotion Verdict**: `CHAMPION_MAINTAINED (2/60 days tracked)`
+- **Out-of-Sample Tracked Trading Days**: 4 / 60 days required
+- **Promotion Verdict**: `CHAMPION_MAINTAINED (4/60 days tracked)`
 - **Active Production Model**: `Champion (Multi-Stage Gordon + Empirical Confluence)`
 
 ---
@@ -43,7 +43,7 @@
 ## 5. Macro & Institutional Backdrop
 - **FII / DII Institutional Flows**: DII Absorption (+₹2,450 Cr) offsetting foreign institutional profit-taking. (Net Cash: +609.7 Cr)
 - **India VIX**: 14.85 (LOW_TO_MODERATE (Sub-16))
-- **Bank Nifty Benchmark**: BULLISH_CONSOLIDATION (Index > 20 DMA > 50 DMA)
+- **Bank Nifty Benchmark**: ALL-TIME HIGH / BULLISH REGIME (Index > 20 DMA > 50 DMA)
 - **Derivatives Options Structure**: PCR 1.18 | Max Pain ₹780 | Major Put Support ₹760
 
 ---

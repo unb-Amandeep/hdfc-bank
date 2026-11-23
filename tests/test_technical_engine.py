@@ -54,9 +54,9 @@ class TestTechnicalEngine(unittest.TestCase):
         self.assertGreater(snapshot.atr_pct, 1.0)
         self.assertLess(snapshot.atr_pct, 5.0)
 
-        # 1D bounds: price +/- 1 * ATR
-        self.assertAlmostEqual(snapshot.expected_1d_low, round(current_price - snapshot.atr_14, 2), places=1)
-        self.assertAlmostEqual(snapshot.expected_1d_high, round(current_price + snapshot.atr_14, 2), places=1)
+        # 1D bounds: price +/- 1 * daily_sigma_inr (daily return volatility sigma = 1.34%)
+        self.assertAlmostEqual(snapshot.expected_1d_low, round(current_price - snapshot.daily_sigma_inr, 2), places=1)
+        self.assertAlmostEqual(snapshot.expected_1d_high, round(current_price + snapshot.daily_sigma_inr, 2), places=1)
 
         # Multi-day bounds widen with sqrt(t)
         self.assertLess(snapshot.expected_3d_low, snapshot.expected_1d_low)

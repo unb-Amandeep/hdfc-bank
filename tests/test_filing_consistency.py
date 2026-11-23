@@ -100,6 +100,16 @@ class TestFilingConsistency(unittest.TestCase):
         self.assertIn("96.0%", html)
         self.assertIn("18.9%", html)
 
+    def test_03_main_dashboard_screen_displays_casa_and_reconciliation(self):
+        """Rule 3: Main dashboard HTML renders CASA ratio with dual reconciliation."""
+        status, body = self.make_request("GET", "/")
+        self.assertEqual(status, 200)
+        html = body.decode("utf-8")
+
+        self.assertIn("38.0% (Period-end)", html)
+        self.assertIn("31.6% (Daily Avg)", html)
+        self.assertIn("30,40,000", html)
+
 
 if __name__ == "__main__":
     unittest.main()

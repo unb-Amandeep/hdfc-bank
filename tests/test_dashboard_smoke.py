@@ -252,7 +252,7 @@ class TestDashboardSmoke(unittest.TestCase):
         vix_val = macro["india_vix"].get("vix_level") or macro["india_vix"].get("value")
         self.assertAlmostEqual(vix_val, 14.85, places=1)
         bn_val = macro["bank_nifty"].get("index_level") or macro["bank_nifty"].get("value")
-        self.assertEqual(bn_val, 51840)
+        self.assertEqual(bn_val, 62324.55)
 
 
 if __name__ == "__main__":
