@@ -1,14 +1,14 @@
-# 🟢 HDFC Bank Daily 2:00 PM Signal Report
-**Date & Time**: Monday, 23 November 2026 at 06:12 PM IST  
-**Symbol**: `HDFCBANK.NS` | **Data Source**: NSE Real-Time (Yahoo Finance)
+# 🔴 HDFC Bank Daily 2:00 PM Signal Report
+**Date & Time**: Tuesday, 24 November 2026 at 02:08 PM IST  
+**Symbol**: `HDFCBANK.NS` | **Data Source**: NSE Historical Verified Cache (Offline / Sandboxed)
 
 ---
 
-## ⚡ Recommended Action: **BUY MORE**
+## ⚡ Recommended Action: **SELL / TRIM**
 - **Current Share Price**: **₹817.8** (-3.33%)
-- **Signal Confidence**: **54.9%**
-- **Recommended Target**: **₹873.25**
-- **Recommended Stop-Loss**: **₹784.53**
+- **Signal Confidence**: **51.8%**
+- **Recommended Target**: **₹762.35**
+- **Recommended Stop-Loss**: **₹851.07**
 - **Risk / Reward**: 1 : 1.67
 
 ---
@@ -25,15 +25,15 @@
 ---
 
 ## 📰 News & Sentiment Breakdown
-- **Overall Sentiment Index**: `+0.19` (BULLISH)
-- **News Volume Tracked**: 30 articles (10 Bullish, 1 Bearish, 19 Neutral)
+- **Overall Sentiment Index**: `+0.06` (NEUTRAL)
+- **News Volume Tracked**: 10 articles (2 Bullish, 1 Bearish, 7 Neutral)
 
 ### Top Headlines Analyzed:
-- ⚪ **HDFC Bank Share Price - Live NSE: HDFCBANK Stock Price & Chart - Upstox** (Upstox) [Sentiment: +0.00]
-- ⚪ **HDFC Bank Market Capitalisation Reclaims ₹13 Lakh Crore After ₹2.38 Lakh Crore Addition in 15 Sessions - Kotak Neo** (Kotak Neo) [Sentiment: +0.00]
-- 🟢 **Nifty Bank at new high, tops 64,000; HDFC, ICICI Bank soar up to 21% in Nov - Business Standard** (Business Standard) [Sentiment: +0.58]
-- 🟢 **HDFC Bank regains ₹13 trillion market-cap; stock hits 8-month high - Business Standard** (Business Standard) [Sentiment: +0.46]
-- ⚪ **HDFC Bank (HDFCBANK) Share Price Today (NSE), Market News - TechGraph** (TechGraph) [Sentiment: +0.00]
+- ⚪ **Q4 results 2026: HDFC Bank, ICICI Bank, Yes Bank, six others to declare Q4 results today - Livemint** (Livemint) [Sentiment: +0.00]
+- ⚪ **HDFC Bank Q4 results preview: Net profit may rise 9%, NII seen up 6% YoY with stable margins; dividend in focus - Livemint** (Livemint) [Sentiment: +0.00]
+- ⚪ **F&O Buildup Report Nov 20: 123 Long Signals; Axis Bank Leads - NiftyTrader** (NiftyTrader) [Sentiment: +0.00]
+- 🟢 **NSE shares rise 2.18 per cent, near 52-week high on BSE - Elets BFSI** (Elets BFSI) [Sentiment: +0.46]
+- ⚪ **Q2 Results FY 2026-27: HCLTech, HDFC Bank, Axis Bank And Infosys Dates - Kotak Neo** (Kotak Neo) [Sentiment: +0.00]
 
 ---
 

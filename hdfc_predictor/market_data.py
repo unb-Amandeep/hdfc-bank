@@ -25,6 +25,12 @@ _AV_LAST_CALL_TS: float = 0.0
 _AV_MIN_INTERVAL: float = 2.0  # Safe 2.0s delay between calls to strictly enforce Alpha Vantage burst limit
 _AV_QUOTE_TTL: float = 120.0   # 2 minutes TTL cache to preserve 25 requests/day limit
 
+# Global In-Memory Caches for Live Quotes & Historical Daily Bars
+_LIVE_QUOTE_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_LIVE_QUOTE_TTL: float = 15.0  # 15s TTL for live market ticks
+_HISTORICAL_DF_CACHE: Dict[Tuple[str, str], Tuple[float, pd.DataFrame]] = {}
+_HISTORICAL_DF_TTL: float = 300.0  # 5 minutes TTL for historical OHLCV dataframes
+
 
 class MarketDataProvider:
     def __init__(self, symbol: str = settings.symbol):
@@ -132,7 +138,22 @@ class MarketDataProvider:
 
         return None
 
-    def get_live_quote(self) -> Dict[str, Any]:
+    def get_live_quote(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Fetches the latest real-time quote for HDFC Bank with in-memory TTL caching (15s).
+        """
+        global _LIVE_QUOTE_CACHE
+        now = time.time()
+        if not force_refresh and self.symbol in _LIVE_QUOTE_CACHE:
+            ts, cached_quote = _LIVE_QUOTE_CACHE[self.symbol]
+            if (now - ts) < _LIVE_QUOTE_TTL:
+                return cached_quote.copy()
+
+        quote = self._fetch_live_quote_uncached()
+        _LIVE_QUOTE_CACHE[self.symbol] = (now, quote.copy())
+        return quote
+
+    def _fetch_live_quote_uncached(self) -> Dict[str, Any]:
         """
         Fetches the latest real-time quote for HDFC Bank from licensed/broker feeds,
         Alpha Vantage, Finnhub, or yfinance.
@@ -348,7 +369,23 @@ class MarketDataProvider:
 
         return quote_data
 
-    def get_historical_daily(self, period: str = "2y") -> pd.DataFrame:
+    def get_historical_daily(self, period: str = "2y", force_refresh: bool = False) -> pd.DataFrame:
+        """
+        Fetches historical daily OHLCV dataframe with in-memory TTL caching (5m).
+        """
+        global _HISTORICAL_DF_CACHE
+        cache_key = (self.symbol, period)
+        now = time.time()
+        if not force_refresh and cache_key in _HISTORICAL_DF_CACHE:
+            ts, cached_df = _HISTORICAL_DF_CACHE[cache_key]
+            if (now - ts) < _HISTORICAL_DF_TTL:
+                return cached_df.copy()
+
+        df = self._fetch_historical_daily_uncached(period=period)
+        _HISTORICAL_DF_CACHE[cache_key] = (now, df.copy())
+        return df
+
+    def _fetch_historical_daily_uncached(self, period: str = "2y") -> pd.DataFrame:
         """
         Fetches historical daily OHLCV dataframe.
         Checks local verified cache first before attempting live fetch.
