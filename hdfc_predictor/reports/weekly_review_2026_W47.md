@@ -34,8 +34,8 @@
 ## 4. Champion vs. Challenger Model Competition
 - **Champion Model**: Empirical Multi-Horizon Touch Model (Brier: 0.162)
 - **Challenger Model**: Adaptive Bayesian Decay Model (Brier: 0.148)
-- **Out-of-Sample Tracked Trading Days**: 4 / 60 days required
-- **Promotion Verdict**: `CHAMPION_MAINTAINED (4/60 days tracked)`
+- **Out-of-Sample Tracked Trading Days**: 5 / 60 days required
+- **Promotion Verdict**: `CHAMPION_MAINTAINED (5/60 days tracked)`
 - **Active Production Model**: `Champion (Multi-Stage Gordon + Empirical Confluence)`
 
 ---
